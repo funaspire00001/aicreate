@@ -4,6 +4,7 @@
       <div class="logo">AI Card Manager</div>
       <div class="nav-links">
         <router-link to="/">仪表盘</router-link>
+        <router-link to="/feedback">用户需求</router-link>
         <router-link to="/requests">需求追踪</router-link>
         <router-link to="/knowledge">知识库</router-link>
         <router-link to="/agents">智能体</router-link>

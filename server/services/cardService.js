@@ -157,8 +157,38 @@ export async function getPendingFeedback(limit = 10) {
   }
 }
 
+/**
+ * 获取所有反馈列表
+ * @param {Object} params - 查询参数
+ */
+export async function getFeedbackList(params = {}) {
+  try {
+    const result = await callCloudFunction('feedback.getList', {
+      status: params.status || '',
+      pageSize: params.pageSize || 20,
+      pageNum: params.pageNum || 1,
+      feedbackType: params.feedbackType || ''
+    });
+
+    if (result.code !== 0) {
+      throw new Error(result.message || '获取反馈列表失败');
+    }
+
+    return {
+      list: result.data?.list || [],
+      total: result.data?.total || 0,
+      pageNum: result.data?.pageNum || 1,
+      pageSize: result.data?.pageSize || 20
+    };
+  } catch (error) {
+    console.error('[cardService] 获取反馈列表失败:', error);
+    throw error;
+  }
+}
+
 export default {
   publishCardDraft,
   updateFeedbackStatus,
-  getPendingFeedback
+  getPendingFeedback,
+  getFeedbackList
 };

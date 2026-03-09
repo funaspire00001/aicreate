@@ -7,6 +7,11 @@ const routes = [
     component: () => import('../views/Dashboard.vue')
   },
   {
+    path: '/feedback',
+    name: 'FeedbackList',
+    component: () => import('../views/FeedbackList.vue')
+  },
+  {
     path: '/requests',
     name: 'RequestTracker',
     component: () => import('../views/RequestTracker.vue')
