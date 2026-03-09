@@ -29,7 +29,7 @@ async function request(path, options = {}) {
 // ============ 仪表盘 ============
 export const dashboardApi = {
   get: () => request('/api/dashboard'),
-  createCard: (data) => request('/api/dashboard/create', {
+  createCard: (data) => request('/api/generate', {
     method: 'POST',
     body: JSON.stringify(data),
   }),
