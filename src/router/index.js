@@ -3,8 +3,33 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    name: 'Home',
-    component: () => import('../views/Home.vue')
+    name: 'Dashboard',
+    component: () => import('../views/Dashboard.vue')
+  },
+  {
+    path: '/requests',
+    name: 'RequestTracker',
+    component: () => import('../views/RequestTracker.vue')
+  },
+  {
+    path: '/requests/:id',
+    name: 'RequestDetail',
+    component: () => import('../views/RequestDetail.vue')
+  },
+  {
+    path: '/knowledge',
+    name: 'KnowledgeBase',
+    component: () => import('../views/KnowledgeBase.vue')
+  },
+  {
+    path: '/knowledge/:id',
+    name: 'KnowledgeDetail',
+    component: () => import('../views/KnowledgeDetail.vue')
+  },
+  {
+    path: '/agents',
+    name: 'AgentMonitor',
+    component: () => import('../views/AgentMonitor.vue')
   },
   {
     path: '/cards',
