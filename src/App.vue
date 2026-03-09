@@ -5,10 +5,7 @@
       <div class="nav-links">
         <router-link to="/">仪表盘</router-link>
         <router-link to="/feedback">用户需求</router-link>
-        <router-link to="/requests">需求追踪</router-link>
-        <router-link to="/knowledge">知识库</router-link>
-        <router-link to="/agents">智能体</router-link>
-        <router-link to="/cards">卡片</router-link>
+        <router-link to="/local-cards">卡片管理</router-link>
       </div>
     </nav>
     <main class="main-content">

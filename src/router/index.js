@@ -37,6 +37,11 @@ const routes = [
     component: () => import('../views/AgentMonitor.vue')
   },
   {
+    path: '/local-cards',
+    name: 'LocalCards',
+    component: () => import('../views/LocalCards.vue')
+  },
+  {
     path: '/cards',
     name: 'Cards',
     component: () => import('../views/CardList.vue')

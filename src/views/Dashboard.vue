@@ -28,6 +28,11 @@
               <option value="ollama-qwen">Ollama Qwen3.5</option>
               <option value="doubao">豆包</option>
             </select>
+            <label>保存：</label>
+            <select v-model="autoPublish">
+              <option :value="false">保存到本地</option>
+              <option :value="true">自动发布</option>
+            </select>
             <label>风格：</label>
             <select v-model="createStyle">
               <option value="">默认</option>
@@ -44,9 +49,13 @@
             <div class="result-header">
               <span class="result-theme">{{ createResult.theme }}</span>
               <span class="result-status success">生成成功</span>
+              <span :class="['result-badge', createResult.status]">
+                {{ createResult.status === 'published' ? '已发布' : '本地保存' }}
+              </span>
             </div>
             <div class="result-info">
               卡片ID: {{ createResult.cardId }} | 耗时: {{ createResult.totalDuration }}ms
+              <span v-if="createResult.publishedCardId"> | 云端ID: {{ createResult.publishedCardId }}</span>
             </div>
             
             <!-- 步骤详情 -->
@@ -100,7 +109,7 @@
         <!-- 处理日志 -->
         <div class="logs-section">
           <div class="logs-header">
-            <span>处理日志</span>
+            <span>{{ generatingStatus }}</span>
             <span class="logs-count">{{ filteredLogs.length }} 条</span>
           </div>
           <div class="logs-content">
@@ -108,6 +117,10 @@
               <span class="log-time">{{ log.time }}</span>
               <span class="log-type" v-if="log.type">{{ log.type }}</span>
               <span class="log-msg">{{ log.message || log }}</span>
+              <!-- 步骤结果详情 -->
+              <div v-if="log.stepOutput" class="log-step-output">
+                <pre>{{ formatStepOutput(log.stepOutput) }}</pre>
+              </div>
             </div>
             <div v-if="filteredLogs.length === 0" class="logs-empty">
               暂无日志
@@ -218,24 +231,30 @@ const processingStatus = ref({
 const loading = ref(false)
 const error = ref(null)
 const showLogs = ref(false)
+const clientLogs = ref([])  // 客户端生成的日志
   
 // 过滤空的日志
 const filteredLogs = computed(() => {
-  if (!processingStatus.value.logs) return []
-  return processingStatus.value.logs.filter(log => {
+  // 合并服务端日志和客户端日志
+  const serverLogs = processingStatus.value.logs || []
+  const allLogs = [...serverLogs, ...clientLogs.value]
+  
+  return allLogs.filter(log => {
     // 过滤掉空内容和没有意义的日志
-    const msg = log.message || log
-    return msg && msg.trim() && !msg.includes('没有待处理的反馈')
-  })
+      const msg = log.message || log
+      return msg && typeof msg === 'string' && msg.trim() && !msg.includes('没有待处理的反馈')  })
 })
 
 // 创作相关
 const createTheme = ref('')
 const createStyle = ref('')
 const createModel = ref('ollama-qwen')  // 默认使用 Ollama
+const autoPublish = ref(false)  // 默认保存到本地
 const creating = ref(false)
 const createResult = ref(null)
 const createError = ref(null)
+const generatingStatus = ref('处理日志')  // 日志标题状态
+const currentGeneratingTheme = ref('')  // 当前正在生成的主题
 
 let refreshInterval = null
 let statusInterval = null
@@ -286,6 +305,24 @@ const fetchProcessingStatus = async () => {
   }
 }
 
+// 格式化步骤输出
+const formatStepOutput = (output) => {
+  if (!output) return ''
+  if (typeof output === 'string') return output
+  try {
+    return JSON.stringify(output, null, 2)
+  } catch (e) {
+    return String(output)
+  }
+}
+
+// 添加日志
+const addLogEntry = (type, message, stepOutput = null) => {
+  const now = new Date()
+  const time = now.toTimeString().slice(0, 8)
+  clientLogs.value.push({ type, message, time, stepOutput })
+}
+
 // 创作卡片
 const handleCreate = async () => {
   if (!createTheme.value.trim() || creating.value) return
@@ -293,25 +330,99 @@ const handleCreate = async () => {
   creating.value = true
   createError.value = null
   createResult.value = null
+  currentGeneratingTheme.value = createTheme.value.trim()
+  generatingStatus.value = `生成中，需求：${currentGeneratingTheme.value}`
+  
+  const theme = createTheme.value.trim()
   
   try {
-    const data = await dashboardApi.createCard({
-      theme: createTheme.value.trim(),
-      style: createStyle.value,
-      model: createModel.value
+    // 使用 SSE 方式发送请求
+    const response = await fetch('http://localhost:3001/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        theme,
+        style: createStyle.value,
+        model: createModel.value,
+        autoPublish: autoPublish.value,
+        stream: true  // 启用 SSE
+      })
     })
     
-    if (data.success) {
-      createResult.value = data
-      createTheme.value = ''
-      // 刷新仪表盘数据
-      fetchDashboard()
-    } else {
-      createError.value = data.error || data.message || '创作失败'
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      
+      buffer += decoder.decode(value, { stream: true })
+      
+      // 解析 SSE 事件
+      const lines = buffer.split('\n\n')
+      buffer = lines.pop() || ''
+      
+      for (const line of lines) {
+        if (!line.trim()) continue
+        
+        const eventMatch = line.match(/^event: (.+)$/m)
+        const dataMatch = line.match(/^data: (.+)$/m)
+        
+        if (eventMatch && dataMatch) {
+          const event = eventMatch[1]
+          const data = JSON.parse(dataMatch[1])
+          
+          switch (event) {
+            case 'start':
+              addLogEntry('info', `开始生成: ${data.theme} (模型: ${data.model})`)
+              break
+              
+            case 'step':
+              const stepMsg = `步骤${data.step} ${data.name} 完成 (${data.duration}ms)`
+              addLogEntry(data.success ? 'success' : 'error', stepMsg, data.output)
+              generatingStatus.value = `生成中，需求：${currentGeneratingTheme.value} - ${data.name}`
+              break
+              
+            case 'saved':
+              addLogEntry('info', `卡片已保存到本地: ${data.cardId}`)
+              break
+              
+            case 'publishing':
+              addLogEntry('info', data.message)
+              generatingStatus.value = `发布中，需求：${currentGeneratingTheme.value}`
+              break
+              
+            case 'published':
+              addLogEntry('success', `已发布到云端: ${data.cardName}`)
+              break
+              
+            case 'complete':
+              createResult.value = data
+              createTheme.value = ''
+              generatingStatus.value = '处理日志'
+              currentGeneratingTheme.value = ''
+              addLogEntry('success', `生成完成！总耗时: ${data.totalDuration}ms`)
+              fetchDashboard()
+              break
+              
+            case 'error':
+              createError.value = data.error
+              generatingStatus.value = '处理日志'
+              currentGeneratingTheme.value = ''
+              addLogEntry('error', `错误: ${data.error}`)
+              break
+          }
+        }
+      }
     }
+    
   } catch (err) {
     console.error('创作卡片失败:', err)
     createError.value = err.message || '创作失败，请重试'
+    generatingStatus.value = '处理日志'
+    currentGeneratingTheme.value = ''
+    addLogEntry('error', `创作失败: ${err.message}`)
   } finally {
     creating.value = false
   }
@@ -354,11 +465,15 @@ h1 {
   display: flex;
   gap: 24px;
   align-items: flex-start;
+  height: calc(100vh - 140px);
 }
 
 .left-panel {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .right-panel {
@@ -373,6 +488,7 @@ h1 {
   padding: 24px;
   margin-bottom: 24px;
   box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+  flex-shrink: 0;
 }
 
 .create-input-wrapper {
@@ -476,6 +592,24 @@ h1 {
 .result-status.success {
   background: #e6f7ee;
   color: #52c41a;
+}
+
+.result-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.result-badge.local {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.result-badge.published {
+  background: #d1fae5;
+  color: #059669;
 }
 
 .result-info {
@@ -595,6 +729,10 @@ h1 {
   border-radius: 16px;
   padding: 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .logs-header {
@@ -604,6 +742,7 @@ h1 {
   margin-bottom: 16px;
   font-weight: 600;
   color: #333;
+  flex-shrink: 0;
 }
 
 .logs-count {
@@ -613,20 +752,23 @@ h1 {
 }
 
 .logs-content {
-  max-height: 500px;
+  flex: 1;
   overflow-y: auto;
   background: #f9f9f9;
   border-radius: 8px;
   padding: 12px;
+  min-height: 200px;
 }
 
 .log-item {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   font-size: 13px;
   padding: 8px 0;
   font-family: 'Monaco', 'Menlo', monospace;
   border-bottom: 1px solid #eee;
+  align-items: flex-start;
 }
 
 .log-item:last-child {
@@ -647,6 +789,7 @@ h1 {
   color: #1890ff;
   min-width: 40px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .log-item.success .log-type {
@@ -663,6 +806,7 @@ h1 {
   flex: 1;
   color: #333;
   word-break: break-all;
+  min-width: 200px;
 }
 
 .log-item.success .log-msg {
@@ -671,6 +815,26 @@ h1 {
 
 .log-item.error .log-msg {
   color: #f5222d;
+}
+
+.log-step-output {
+  width: 100%;
+  margin-top: 8px;
+  background: #f0f0f0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+}
+
+.log-step-output pre {
+  margin: 0;
+  font-size: 11px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  color: #555;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 150px;
+  overflow-y: auto;
 }
 
 .logs-empty {
@@ -688,6 +852,7 @@ h1 {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   border-left: 4px solid #999;
   transition: all 0.3s;
+  flex-shrink: 0;
 }
 
 .processing-status.active {
@@ -883,6 +1048,11 @@ th {
 @media (max-width: 1024px) {
   .dashboard-layout {
     flex-direction: column;
+    height: auto;
+  }
+  
+  .left-panel {
+    height: auto;
   }
   
   .right-panel {

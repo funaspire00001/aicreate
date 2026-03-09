@@ -35,6 +35,26 @@ export const dashboardApi = {
   }),
 };
 
+// ============ 本地卡片管理 ============
+export const localCardsApi = {
+  list: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/api/local-cards?${query}`);
+  },
+  
+  get: (cardId) => request(`/api/local-cards/${cardId}`),
+  
+  publish: (cardId) => request(`/api/local-cards/${cardId}/publish`, {
+    method: 'POST',
+  }),
+  
+  delete: (cardId) => request(`/api/local-cards/${cardId}`, {
+    method: 'DELETE',
+  }),
+  
+  stats: () => request('/api/local-cards/stats/summary'),
+};
+
 // ============ 需求追踪 ============
 export const requestsApi = {
   list: (params = {}) => {
@@ -136,4 +156,5 @@ export default {
   feedback: feedbackApi,
   health: healthApi,
   status: statusApi,
+  localCards: localCardsApi,
 };
