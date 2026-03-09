@@ -85,8 +85,7 @@ const parsedFace = ref(null)
 // 计算包装器样式
 const wrapperStyle = computed(() => {
   return {
-    transform: `scale(${props.scale})`,
-    transformOrigin: props.scaleOrigin
+    // 缩放已移至 CardBg 组件
   }
 })
 
@@ -95,9 +94,12 @@ const cardBgStyle = computed(() => {
   if (!parsedFace.value?.background?.layout) {
     return {}
   }
+  const layout = parsedFace.value.background.layout
   return {
-    width: parsedFace.value.background.layout.width,
-    height: parsedFace.value.background.layout.height
+    width: layout.width,
+    height: layout.height,
+    transform: `scale(${props.scale})`,
+    transformOrigin: props.scaleOrigin
   }
 })
 

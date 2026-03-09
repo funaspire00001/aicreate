@@ -211,6 +211,17 @@
                 </div>
               </div>
             </div>
+            
+            <!-- 卡片JSON -->
+            <div class="info-section">
+              <h4 class="clickable-header" @click="showJson = !showJson">
+                <span>卡片JSON</span>
+                <span class="toggle-icon">{{ showJson ? '▼' : '▶' }}</span>
+              </h4>
+              <div v-if="showJson" class="json-viewer">
+                <pre>{{ formatJson(detailData?.cardData) }}</pre>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -252,6 +263,7 @@ const total = ref(0);
 // 详情
 const showDetail = ref(false);
 const detailData = ref(null);
+const showJson = ref(false);
 
 // 发布状态
 const publishingId = ref(null);
@@ -731,7 +743,7 @@ onMounted(() => {
   overflow-y: auto;
   display: flex;
   gap: 24px;
-  flex: 1;
+  align-items: stretch;
 }
 
 .detail-preview {
@@ -743,11 +755,11 @@ onMounted(() => {
   overflow: visible;
   background: #f8f9fa;
   border-radius: 12px;
-  min-height: 500px; padding: 16px;
+  padding: 24px;
 }
 
 .detail-info {
-  flex: 1;
+  align-items: stretch;
   min-width: 0;
 }
 
@@ -794,6 +806,43 @@ onMounted(() => {
   overflow-y: auto;
 }
 
+.clickable-header {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.clickable-header:hover {
+  color: #667eea;
+}
+
+.toggle-icon {
+  font-size: 12px;
+  transition: transform 0.2s;
+}
+
+.json-viewer {
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+  overflow: auto;
+  max-height: 400px;
+}
+
+.json-viewer pre {
+  margin: 0;
+  color: #d4d4d4;
+  font-family: "Monaco", "Menlo", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .steps-list {
   display: flex;
   flex-direction: column;
@@ -816,7 +865,7 @@ onMounted(() => {
 }
 
 .step-name {
-  flex: 1;
+  align-items: stretch;
 }
 
 .step-duration {

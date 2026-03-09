@@ -65,9 +65,10 @@ function handleImageError(event) {
 <style scoped>
 .card-bg {
   position: relative;
-  width: 100%;
-  height: 100%;
   overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .background-image {
