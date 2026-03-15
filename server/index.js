@@ -13,6 +13,8 @@ import feedbackRoutes from './routes/feedback.js';
 import statusRoutes from './routes/status.js';
 import generateRoutes from './routes/generate.js';
 import localCardsRoutes from './routes/localCards.js';
+import modelsRoutes from './routes/models.js';
+import workflowsRoutes from './routes/workflows.js';
 
 import { startScheduler } from './services/scheduler.js';
 
@@ -38,6 +40,8 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/generate', generateRoutes);
 app.use('/api/local-cards', localCardsRoutes);
+app.use('/api/models', modelsRoutes);
+app.use('/api/workflows', workflowsRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {

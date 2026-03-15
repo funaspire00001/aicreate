@@ -229,6 +229,8 @@ onMounted(() => {
 <style scoped>
 .feedback-list {
   padding: 20px;
+  margin: 0;
+  max-width: 100%;
 }
 
 .page-header {

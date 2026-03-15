@@ -23,3 +23,7 @@ npm-debug.log*
 
 # 其他
 *.md
+
+# 本地配置（不会被提交）
+config/models.json
+config/models.json.example

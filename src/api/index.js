@@ -148,6 +148,30 @@ export const statusApi = {
   trigger: () => request('/api/status/trigger', { method: 'POST' }),
 };
 
+// ============ 模型管理 ============
+export const modelsApi = {
+  list: () => request('/api/models'),
+  
+  ollama: () => request('/api/models/ollama'),
+  
+  ollamaStatus: () => request('/api/models/ollama/status'),
+  
+  // 添加模型
+  add: (model) => request('/api/models', { method: 'POST', body: model }),
+  
+  // 更新模型
+  update: (id, model) => request(`/api/models/${id}`, { method: 'PUT', body: model }),
+  
+  // 删除模型
+  delete: (id) => request(`/api/models/${id}`, { method: 'DELETE' }),
+  
+  // 测试模型
+  test: (id, testPrompt) => request(`/api/models/${id}/test`, { method: 'POST', body: { testPrompt } }),
+  
+  // 更新 Ollama 配置
+  updateOllamaConfig: (config) => request('/api/models/ollama/config', { method: 'PUT', body: config }),
+};
+
 export default {
   dashboard: dashboardApi,
   requests: requestsApi,
@@ -157,4 +181,5 @@ export default {
   health: healthApi,
   status: statusApi,
   localCards: localCardsApi,
+  models: modelsApi,
 };

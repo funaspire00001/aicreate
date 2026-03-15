@@ -428,8 +428,8 @@ onMounted(() => {
 
 <style scoped>
 .local-cards {
-  max-width: 1400px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
   padding: 24px;
 }
 

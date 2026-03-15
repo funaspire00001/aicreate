@@ -1,16 +1,41 @@
 <template>
   <div id="app">
-    <nav class="navbar">
-      <div class="logo">AI Card Manager</div>
-      <div class="nav-links">
-        <router-link to="/">仪表盘</router-link>
-        <router-link to="/feedback">用户需求</router-link>
-        <router-link to="/local-cards">卡片管理</router-link>
-      </div>
-    </nav>
-    <main class="main-content">
-      <router-view />
-    </main>
+    <div class="app-container">
+      <nav class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">AI Card Manager</div>
+        </div>
+        <div class="nav-links">
+          <router-link to="/" class="nav-item">
+            <span class="nav-icon">📊</span>
+            <span class="nav-text">仪表盘</span>
+          </router-link>
+          <router-link to="/workflows" class="nav-item">
+            <span class="nav-icon">⚙️</span>
+            <span class="nav-text">工作流管理</span>
+          </router-link>
+          <router-link to="/agents" class="nav-item">
+            <span class="nav-icon">👥</span>
+            <span class="nav-text">智能体管理</span>
+          </router-link>
+          <router-link to="/models" class="nav-item">
+            <span class="nav-icon">🤖</span>
+            <span class="nav-text">模型管理</span>
+          </router-link>
+          <router-link to="/feedback" class="nav-item">
+            <span class="nav-icon">�</span>
+            <span class="nav-text">用户需求</span>
+          </router-link>
+          <router-link to="/local-cards" class="nav-item">
+            <span class="nav-icon">🃏</span>
+            <span class="nav-text">卡片管理</span>
+          </router-link>
+        </div>
+      </nav>
+      <main class="main-content">
+        <router-view />
+      </main>
+    </div>
   </div>
 </template>
 
@@ -35,16 +60,26 @@ body {
   min-height: 100vh;
 }
 
-.navbar {
-  background: white;
-  padding: 0 24px;
-  height: 60px;
+.app-container {
   display: flex;
-  align-items: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  position: sticky;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  background: white;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+  position: fixed;
   top: 0;
+  left: 0;
+  height: 100vh;
   z-index: 100;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  padding: 24px;
+  border-bottom: 1px solid #f0f2f5;
 }
 
 .logo {
@@ -54,30 +89,46 @@ body {
 }
 
 .nav-links {
-  display: flex;
-  gap: 8px;
-  margin-left: 40px;
+  padding: 16px 0;
 }
 
-.nav-links a {
-  padding: 8px 16px;
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 24px;
   color: #666;
   text-decoration: none;
-  border-radius: 6px;
   transition: all 0.2s;
+  border-radius: 0 20px 20px 0;
+  margin: 0 16px;
 }
 
-.nav-links a:hover {
+.nav-item:hover {
   background: #f5f7fa;
   color: #667eea;
 }
 
-.nav-links a.router-link-active {
+.nav-item.router-link-active {
   background: #667eea;
   color: white;
+  font-weight: 500;
+}
+
+.nav-icon {
+  font-size: 18px;
+  margin-right: 12px;
+  width: 24px;
+  text-align: center;
+}
+
+.nav-text {
+  font-size: 14px;
 }
 
 .main-content {
-  min-height: calc(100vh - 60px);
+  flex: 1;
+  margin-left: 240px;
+  min-height: 100vh;
+  padding: 24px;
 }
 </style>

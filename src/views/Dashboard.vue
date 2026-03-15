@@ -450,14 +450,15 @@ onUnmounted(() => {
 
 <style scoped>
 .dashboard {
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+  padding: 0;
+  max-width: 100%;
+  margin: 0;
 }
 
 h1 {
   margin-bottom: 24px;
   color: #333;
+  padding: 0 20px;
 }
 
 /* 左右布局 */
@@ -465,7 +466,7 @@ h1 {
   display: flex;
   gap: 24px;
   align-items: flex-start;
-  height: calc(100vh - 140px);
+  padding: 0 20px;
 }
 
 .left-panel {
@@ -473,7 +474,6 @@ h1 {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
 .right-panel {

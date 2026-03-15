@@ -33,6 +33,16 @@ const routes = [
   },
   {
     path: '/agents',
+    name: 'AgentManagement',
+    component: () => import('../views/AgentManagement.vue')
+  },
+  {
+    path: '/workflows',
+    name: 'WorkflowManagement',
+    component: () => import('../views/WorkflowManagement.vue')
+  },
+  {
+    path: '/agent-monitor',
     name: 'AgentMonitor',
     component: () => import('../views/AgentMonitor.vue')
   },
@@ -40,6 +50,11 @@ const routes = [
     path: '/local-cards',
     name: 'LocalCards',
     component: () => import('../views/LocalCards.vue')
+  },
+  {
+    path: '/models',
+    name: 'ModelManagement',
+    component: () => import('../views/ModelManagement.vue')
   },
   {
     path: '/cards',
