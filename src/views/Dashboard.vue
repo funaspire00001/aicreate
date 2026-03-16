@@ -1,6 +1,15 @@
 <template>
   <div class="dashboard">
-    <h1>仪表盘</h1>
+    <div class="dashboard-header">
+      <h1>仪表盘</h1>
+      <div class="backend-status" :class="backendStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">
+          {{ backendStatus === 'connected' ? '后端已连接' : backendStatus === 'disconnected' ? '后端未连接' : '检测中...' }}
+        </span>
+        <span v-if="backendInfo.uptimeFormatted" class="status-uptime">运行 {{ backendInfo.uptimeFormatted }}</span>
+      </div>
+    </div>
     
     <!-- 左右布局 -->
     <div class="dashboard-layout">
@@ -202,6 +211,13 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { dashboardApi, statusApi } from '../api'
 
+// 后端状态
+const backendStatus = ref('checking') // 'checking' | 'connected' | 'disconnected'
+const backendInfo = ref({
+  uptimeFormatted: '',
+  memory: null
+})
+
 const stats = ref({
   today: { requests: 0, cards: 0, knowledgeUsed: 0 },
   knowledge: { total: 0 },
@@ -258,6 +274,7 @@ const currentGeneratingTheme = ref('')  // 当前正在生成的主题
 
 let refreshInterval = null
 let statusInterval = null
+let healthInterval = null
 
 const formatTime = (time) => {
   if (!time) return '-'
@@ -431,11 +448,14 @@ const handleCreate = async () => {
 onMounted(() => {
   fetchDashboard()
   fetchProcessingStatus()
+  checkBackendHealth()
   
   // 每30秒刷新仪表盘
   refreshInterval = setInterval(fetchDashboard, 30000)
   // 每3秒刷新处理状态
   statusInterval = setInterval(fetchProcessingStatus, 3000)
+  // 每10秒检测后端状态
+  healthInterval = setInterval(checkBackendHealth, 10000)
 })
 
 onUnmounted(() => {
@@ -445,7 +465,25 @@ onUnmounted(() => {
   if (statusInterval) {
     clearInterval(statusInterval)
   }
+  if (healthInterval) {
+    clearInterval(healthInterval)
+  }
 })
+
+// 检测后端健康状态
+async function checkBackendHealth() {
+  try {
+    const response = await statusApi.health()
+    if (response.success) {
+      backendStatus.value = 'connected'
+      backendInfo.value = response.data
+    } else {
+      backendStatus.value = 'disconnected'
+    }
+  } catch (err) {
+    backendStatus.value = 'disconnected'
+  }
+}
 </script>
 
 <style scoped>
@@ -459,6 +497,70 @@ h1 {
   margin-bottom: 24px;
   color: #333;
   padding: 0 20px;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.backend-status{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  background: #f0f0f0;
+  color: #666;
+}
+
+.backend-status.connected{
+  background: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+.backend-status.disconnected{
+  background: #fff1f0;
+  color: #f5222d;
+  border: 1px solid #ffccc7;
+}
+
+.backend-status.checking{
+  background: #f0f0f0;
+  color: #999;
+  border: 1px solid #d9d9d9;
+}
+
+.status-dot{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.backend-status.connected .status-dot{
+  background: #52c41a;
+  animation: pulse 2s infinite;
+}
+
+.backend-status.disconnected .status-dot{
+  background: #f5222d;
+}
+
+@keyframes pulse{
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+.status-uptime{
+  font-size: 12px;
+  color: #999;
+  margin-left: 8px;
 }
 
 /* 左右布局 */

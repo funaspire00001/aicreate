@@ -63,11 +63,10 @@
               class="step-item"
             >
               <div class="step-number">{{ index + 1 }}</div>
-              <div class="step-content">
-                <div class="step-name">{{ step.name }}</div>
-                <div class="step-agent">{{ step.agent }}</div>
-              </div>
-              <div v-if="index < workflow.steps.length - 1" class="step-arrow">→</div>
+                              <div class="step-content">
+                              <div class="step-name">{{ step.name }}</div>
+                              <div class="step-agent">{{ step.agentName || step.agent }}</div>
+                            </div>              <div v-if="index < workflow.steps.length - 1" class="step-arrow">→</div>
             </div>
           </div>
         </div>
@@ -156,14 +155,18 @@
                       placeholder="步骤名称"
                       required
                     >
-                    <select v-model="step.agent" required>
+                    <select 
+                      v-model="step.agentId" 
+                      required
+                      @change="onAgentSelect(step)"
+                    >
                       <option value="">选择智能体</option>
                       <option 
                         v-for="agent in availableAgents" 
                         :key="agent.id"
-                        :value="agent.name"
+                        :value="agent.id"
                       >
-                        {{ agent.name }}
+                        {{ agent.name }} ({{ agent.role }})
                       </option>
                     </select>
                     <textarea 
@@ -305,13 +308,21 @@ const runWorkflow = async (workflowId) => {
 const addStep = () => {
   formData.value.steps.push({
     name: '',
-    agent: '',
+    agentId: '',
+    agentName: '',
     prompt: ''
   })
 }
 
 const removeStep = (index) => {
   formData.value.steps.splice(index, 1)
+}
+
+const onAgentSelect = (step) => {
+  const agent = availableAgents.value.find(a => a.id === step.agentId)
+  if (agent) {
+    step.agentName = agent.name
+  }
 }
 
 const getTriggerType = (trigger) => {

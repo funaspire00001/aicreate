@@ -45,7 +45,37 @@ app.use('/api/workflows', workflowsRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const uptime = process.uptime();
+  const memoryUsage = process.memoryUsage();
+  
+  const formatUptime = (seconds) => {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (days > 0) return `${days}天 ${hours}时 ${mins}分`;
+    if (hours > 0) return `${hours}时 ${mins}分 ${secs}秒`;
+    if (mins > 0) return `${mins}分 ${secs}秒`;
+    return `${secs}秒`;
+  };
+  
+  res.json({
+    success: true,
+    data: {
+      status: 'running',
+      uptime: Math.floor(uptime),
+      uptimeFormatted: formatUptime(uptime),
+      memory: {
+        used: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+        total: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+        rss: Math.round(memoryUsage.rss / 1024 / 1024)
+      },
+      timestamp: new Date().toISOString(),
+      nodeVersion: process.version,
+      platform: process.platform
+    }
+  });
 });
 
 // 连接 MongoDB 并启动服务

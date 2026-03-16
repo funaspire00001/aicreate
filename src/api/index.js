@@ -143,6 +143,7 @@ export const healthApi = {
 
 // ============ 处理状态 ============
 export const statusApi = {
+  health: () => request('/api/health'),
   get: () => request('/api/status/status'),
   scheduler: () => request('/api/status/scheduler/status'),
   trigger: () => request('/api/status/trigger', { method: 'POST' }),
