@@ -37,7 +37,7 @@
           </div>
           <div class="detail-row">
             <span class="detail-label">模型：</span>
-            <span class="detail-value">{{ agent.model || '未设置' }}</span>
+            <span class="detail-value">{{ agent.modelId || 'ollama-qwen' }}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">状态：</span>
@@ -114,10 +114,9 @@
               <label for="agent-model">模型</label>
               <select 
                 id="agent-model" 
-                v-model="formData.model" 
+                v-model="formData.modelId" 
                 required
               >
-                <option value="">选择模型</option>
                 <option 
                   v-for="model in availableModels" 
                   :key="model.id"
@@ -126,6 +125,31 @@
                   {{ model.name }} ({{ model.provider }})
                 </option>
               </select>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group half">
+                <label for="agent-temperature">温度</label>
+                <input 
+                  type="number" 
+                  id="agent-temperature" 
+                  v-model="formData.temperature"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                >
+              </div>
+              <div class="form-group half">
+                <label for="agent-maxTokens">最大Token</label>
+                <input 
+                  type="number" 
+                  id="agent-maxTokens" 
+                  v-model="formData.maxTokens"
+                  min="256"
+                  max="32768"
+                  step="256"
+                >
+              </div>
             </div>
 
             <div class="form-group">
@@ -205,8 +229,10 @@ const formData = ref({
   name: '',
   role: 'analyst',
   description: '',
-  model: '',
+  modelId: 'ollama-qwen',
   prompt: '',
+  temperature: 0.7,
+  maxTokens: 4096,
   enabled: true,
   capabilities: []
 })
@@ -290,8 +316,10 @@ const closeModal = () => {
     name: '',
     role: 'analyst',
     description: '',
-    model: '',
+    modelId: 'ollama-qwen',
     prompt: '',
+    temperature: 0.7,
+    maxTokens: 4096,
     enabled: true,
     capabilities: []
   }
@@ -548,6 +576,15 @@ onMounted(async () => {
 
 .form-group {
   margin-bottom: 20px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.form-group.half {
+  flex: 1;
 }
 
 .form-group label {
