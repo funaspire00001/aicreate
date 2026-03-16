@@ -22,14 +22,22 @@
             <span class="nav-icon">🤖</span>
             <span class="nav-text">模型管理</span>
           </router-link>
+          <router-link to="/demands" class="nav-item">
+            <span class="nav-icon">📝</span>
+            <span class="nav-text">需求管理</span>
+          </router-link>
           <router-link to="/feedback" class="nav-item">
-            <span class="nav-icon">�</span>
-            <span class="nav-text">用户需求</span>
+            <span class="nav-icon">💬</span>
+            <span class="nav-text">用户反馈</span>
           </router-link>
           <router-link to="/local-cards" class="nav-item">
             <span class="nav-icon">🃏</span>
             <span class="nav-text">卡片管理</span>
           </router-link>
+          <a href="http://localhost:3001/admin" target="_blank" class="nav-item">
+            <span class="nav-icon">🗄️</span>
+            <span class="nav-text">数据库管理</span>
+          </a>
         </div>
       </nav>
       <main class="main-content">

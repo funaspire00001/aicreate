@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const agentSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   name: { type: String, required: true },
-  role: { type: String, required: true, enum: ['analyst', 'generator', 'designer', 'reviewer', 'planner', 'custom'] },
+  role: { type: String, required: true, enum: ['organizer', 'architect', 'planner', 'generator', 'analyst', 'designer', 'reviewer', 'custom'] },
   description: { type: String, default: '' },
   
   // 关联模型 ID（引用 models.json 中的模型）

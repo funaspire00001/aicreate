@@ -2,6 +2,7 @@ import express from 'express';
 import Workflow from '../models/Workflow.js';
 import WorkflowExecution from '../models/WorkflowExecution.js';
 import Agent from '../models/Agent.js';
+import Demand from '../models/Demand.js';
 import { callModel } from '../services/ai/modelDispatcher.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -484,6 +485,47 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
       }
     }
     
+    // 提取各步骤输出用于存储
+    const stepOutputs = execution.steps.map(s => ({
+      stepName: s.name,
+      output: s.output,
+      success: s.status === 'success'
+    }));
+    
+    // 如果有 demandId，更新需求状态并存储中间数据
+    if (typeof input === 'object' && input.demandId) {
+      const demandUpdate = {
+        status: 'completed',
+        processedAt: new Date(),
+        workflowExecutionId: execution.id,
+        cardCount: cardData ? 1 : 0,
+        // 存储各步骤的输出，便于后续查看
+        stepOutputs: stepOutputs
+      };
+      
+      // 从步骤输出中提取知识树和卡片规划
+      if (stepOutputs[1]?.output) {
+        try {
+          demandUpdate.knowledgeTree = JSON.parse(stepOutputs[1].output);
+        } catch (e) {
+          demandUpdate.knowledgeTreeRaw = stepOutputs[1].output;
+        }
+      }
+      
+      if (stepOutputs[2]?.output) {
+        try {
+          demandUpdate.cardPlan = JSON.parse(stepOutputs[2].output);
+        } catch (e) {
+          demandUpdate.cardPlanRaw = stepOutputs[2].output;
+        }
+      }
+      
+      await Demand.findOneAndUpdate(
+        { id: input.demandId },
+        demandUpdate
+      );
+    }
+    
     // 更新工作流统计
     workflow.stats.successRuns += 1;
     workflow.lastStatus = 'success';
@@ -493,6 +535,19 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
     execution.error = error.message;
     workflow.stats.failedRuns += 1;
     workflow.lastStatus = 'failed';
+    
+    // 如果有 demandId，更新需求状态为失败
+    if (typeof input === 'object' && input.demandId) {
+      await Demand.findOneAndUpdate(
+        { id: input.demandId },
+        {
+          status: 'failed',
+          processedAt: new Date(),
+          workflowExecutionId: execution.id,
+          errorMessage: error.message
+        }
+      );
+    }
   }
   
   execution.endTime = new Date();
@@ -592,45 +647,54 @@ router.post('/init-defaults', async (req, res) => {
     // 获取智能体
     const agents = await Agent.find();
     
-    if (agents.length < 3) {
+    if (agents.length < 4) {
       return res.status(400).json({
         success: false,
-        error: '请先初始化智能体'
+        error: '请先初始化智能体（需要4个）'
       });
     }
     
-    const analyst = agents.find(a => a.role === 'analyst');
+    // 根据角色找到对应的智能体
+    const organizer = agents.find(a => a.role === 'organizer');
+    const architect = agents.find(a => a.role === 'architect');
+    const planner = agents.find(a => a.role === 'planner');
     const generator = agents.find(a => a.role === 'generator');
-    const designer = agents.find(a => a.role === 'designer');
     
     const defaultWorkflows = [
       {
-        id: uuidv4(),
+        id: 'knowledge-card-flow',
         name: '知识卡片生成流程',
-        description: '从用户需求到知识卡片的完整生成流程',
+        description: '从需求到知识卡片的完整流程：信息整理→知识树构建→卡片规划→卡片生成',
         trigger: 'manual',
         enabled: true,
         steps: [
           {
             order: 1,
-            name: '需求分析',
-            agentId: analyst?.id,
-            agentName: analyst?.name,
-            prompt: '分析用户需求，提取关键信息和主题'
+            name: '信息整理',
+            agentId: organizer?.id,
+            agentName: organizer?.name,
+            prompt: '从用户输入中提取关键信息点'
           },
           {
             order: 2,
-            name: '内容生成',
-            agentId: generator?.id,
-            agentName: generator?.name,
-            prompt: '根据分析结果生成详细的知识内容'
+            name: '知识树构建',
+            agentId: architect?.id,
+            agentName: architect?.name,
+            prompt: '根据关键信息构建知识体系架构'
           },
           {
             order: 3,
-            name: '卡片设计',
-            agentId: designer?.id,
-            agentName: designer?.name,
-            prompt: '将生成的内容设计成美观的知识卡片JSON'
+            name: '卡片规划',
+            agentId: planner?.id,
+            agentName: planner?.name,
+            prompt: '根据知识树制定具体卡片生成计划'
+          },
+          {
+            order: 4,
+            name: '卡片生成',
+            agentId: generator?.id,
+            agentName: generator?.name,
+            prompt: '根据卡片规划生成知识卡片JSON'
           }
         ]
       }

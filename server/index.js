@@ -15,6 +15,8 @@ import generateRoutes from './routes/generate.js';
 import localCardsRoutes from './routes/localCards.js';
 import modelsRoutes from './routes/models.js';
 import workflowsRoutes from './routes/workflows.js';
+import demandsRoutes from './routes/demands.js';
+import { createAdminRouter } from './routes/admin.js';
 
 import { startScheduler } from './services/scheduler.js';
 
@@ -42,6 +44,7 @@ app.use('/api/generate', generateRoutes);
 app.use('/api/local-cards', localCardsRoutes);
 app.use('/api/models', modelsRoutes);
 app.use('/api/workflows', workflowsRoutes);
+app.use('/api/demands', demandsRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {
@@ -80,8 +83,18 @@ app.get('/api/health', (req, res) => {
 
 // 连接 MongoDB 并启动服务
 mongoose.connect(MONGO_URI)
-  .then(() => {
+  .then(async () => {
     console.log('✅ MongoDB 连接成功');
+    
+    // 初始化 AdminJS
+    try {
+      const { admin, router: adminRouter } = await createAdminRouter();
+      app.use(admin.options.rootPath, adminRouter);
+      console.log(`📊 AdminJS 管理后台: http://localhost:${PORT}${admin.options.rootPath}`);
+    } catch (err) {
+      console.error('❌ AdminJS 初始化失败:', err);
+    }
+    
     app.listen(PORT, () => {
       console.log(`🚀 服务器运行在 http://localhost:${PORT}`);
       

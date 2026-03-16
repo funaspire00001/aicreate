@@ -37,6 +37,11 @@ const routes = [
     component: () => import('../views/AgentManagement.vue')
   },
   {
+    path: '/demands',
+    name: 'DemandList',
+    component: () => import('../views/DemandList.vue')
+  },
+  {
     path: '/workflows',
     name: 'WorkflowManagement',
     component: () => import('../views/WorkflowManagement.vue')

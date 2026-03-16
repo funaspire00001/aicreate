@@ -158,26 +158,37 @@ export const modelsApi = {
   
   ollamaStatus: () => request('/api/models/ollama/status'),
   
-  // 添加模型
   add: (model) => request('/api/models', { method: 'POST', body: model }),
   
-  // 更新模型
   update: (id, model) => request(`/api/models/${encodeURIComponent(id)}`, { method: 'PUT', body: model }),
   
-  // 删除模型
   delete: (id) => request(`/api/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   
-  // 测试模型
   test: (id, testPrompt) => request(`/api/models/${encodeURIComponent(id)}/test`, { method: 'POST', body: { testPrompt } }),
   
-  // 更新 Ollama 配置
   updateOllamaConfig: (config) => request('/api/models/ollama/config', { method: 'PUT', body: config }),
   
-  // 获取原始配置文件
   getConfig: () => request('/api/models/config'),
   
-  // 保存原始配置文件
   saveConfig: (config) => request('/api/models/config', { method: 'PUT', body: config }),
+};
+
+// ============ 需求管理 ============
+export const demandsApi = {
+  list: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/api/demands?${query}`);
+  },
+  
+  get: (id) => request(`/api/demands/${id}`),
+  
+  create: (data) => request('/api/demands', { method: 'POST', body: data }),
+  
+  update: (id, data) => request(`/api/demands/${id}`, { method: 'PUT', body: data }),
+  
+  delete: (id) => request(`/api/demands/${id}`, { method: 'DELETE' }),
+  
+  stats: () => request('/api/demands/stats/overview'),
 };
 
 export default {
@@ -190,4 +201,5 @@ export default {
   status: statusApi,
   localCards: localCardsApi,
   models: modelsApi,
+  demands: demandsApi,
 };

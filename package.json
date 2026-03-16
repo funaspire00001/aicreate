@@ -11,9 +11,14 @@
     "start": "node server/index.js"
   },
   "dependencies": {
+    "@adminjs/express": "^6.1.1",
+    "@adminjs/mongoose": "^4.1.0",
+    "adminjs": "^7.8.17",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
+    "express-formidable": "^1.2.0",
+    "express-session": "^1.19.0",
     "mongoose": "^8.9.0",
     "pinia": "^2.3.0",
     "uuid": "^10.0.0",
