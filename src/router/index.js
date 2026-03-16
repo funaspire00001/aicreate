@@ -75,6 +75,16 @@ const routes = [
     path: '/cards/:id',
     name: 'CardDetail',
     component: () => import('../views/CardDetail.vue')
+  },
+  {
+    path: '/data',
+    name: 'DataManager',
+    component: () => import('../views/DataManager.vue')
+  },
+  {
+    path: '/monitor',
+    name: 'Monitor',
+    component: () => import('../views/Monitor.vue')
   }
 ]
 

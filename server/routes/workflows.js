@@ -3,10 +3,28 @@ import Workflow from '../models/Workflow.js';
 import WorkflowExecution from '../models/WorkflowExecution.js';
 import Agent from '../models/Agent.js';
 import Demand from '../models/Demand.js';
+import StepLog from '../models/StepLog.js';
 import { callModel } from '../services/ai/modelDispatcher.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
+
+// 日志记录辅助函数
+async function addLog(executionId, step, stepName, level, message, extra = {}) {
+  try {
+    const log = new StepLog({
+      executionId,
+      step,
+      stepName,
+      level,
+      message,
+      ...extra
+    });
+    await log.save();
+  } catch (err) {
+    console.error('保存日志失败:', err);
+  }
+}
 
 /**
  * 获取所有工作流
@@ -337,15 +355,54 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
     currentInput = input.theme;
   }
   
+  // 根据步骤名称获取详细状态
+  const getDetailStatus = (stepName, phase) => {
+    const statusMap = {
+      '信息整理': {
+        start: '初始化中',
+        process: '分析需求内容',
+        end: '整理完成'
+      },
+      '知识树构建': {
+        start: '初始化中',
+        process: '构建知识架构',
+        end: '构建完成'
+      },
+      '卡片规划': {
+        start: '初始化中',
+        process: '规划卡片结构',
+        end: '规划完成'
+      },
+      '卡片生成': {
+        start: '初始化中',
+        process: '生成卡片数据',
+        end: '生成完成'
+      }
+    };
+    return statusMap[stepName]?.[phase] || (phase === 'start' ? '初始化中' : phase === 'process' ? '处理中' : '完成');
+  };
+  
   try {
+    // 记录工作流开始
+    await addLog(execution.id, 0, '工作流', 'info', `开始执行工作流: ${workflow.name}`, {
+      input: typeof currentInput === 'string' ? currentInput.substring(0, 200) : currentInput
+    });
+    
     for (let i = 0; i < workflow.steps.length; i++) {
       const step = workflow.steps[i];
       const execStep = execution.steps[i];
       
       execStep.status = 'running';
+      execStep.detailStatus = getDetailStatus(step.name, 'start');
       execStep.startTime = new Date();
       execStep.input = currentInput;
       await execution.save();
+      
+      // 记录步骤开始
+      await addLog(execution.id, i + 1, step.name, 'info', `步骤 ${i + 1} 开始执行`, {
+        agentId: step.agentId,
+        agentName: step.agentName
+      });
       
       // SSE: 发送步骤开始事件
       if (sseRes) {
@@ -353,7 +410,8 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
           stepIndex: i,
           totalSteps: workflow.steps.length,
           stepName: step.name,
-          agentName: step.agentName
+          agentName: step.agentName,
+          detailStatus: execStep.detailStatus
         });
       }
       
@@ -362,12 +420,24 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
         const agent = await Agent.findOne({ id: step.agentId });
         
         if (!agent) {
-          throw new Error(`智能体不存在: ${step.agentId}`);
+          const errMsg = `智能体不存在: ${step.agentId}`;
+          await addLog(execution.id, i + 1, step.name, 'error', errMsg);
+          throw new Error(errMsg);
         }
         
         if (!agent.enabled) {
-          throw new Error(`智能体已禁用: ${agent.name}`);
+          const errMsg = `智能体已禁用: ${agent.name}`;
+          await addLog(execution.id, i + 1, step.name, 'error', errMsg);
+          throw new Error(errMsg);
         }
+        
+        // 更新状态：处理中
+        execStep.detailStatus = getDetailStatus(step.name, 'process');
+        await execution.save();
+        
+        await addLog(execution.id, i + 1, step.name, 'info', `使用模型: ${agent.modelId}`, {
+          model: agent.modelId
+        });
         
         // 构建提示词
         const systemPrompt = agent.prompt;
@@ -379,6 +449,10 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
         if (typeof input === 'object' && input.style) {
           userPrompt += `\n\n风格要求：${input.style}`;
         }
+        
+        await addLog(execution.id, i + 1, step.name, 'debug', `调用模型中...`, {
+          input: currentInput.substring(0, 100)
+        });
         
         // 调用模型
         const result = await callModel(
@@ -392,10 +466,18 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
         );
         
         execStep.status = 'success';
+        execStep.detailStatus = getDetailStatus(step.name, 'end');
         execStep.output = result;
         execStep.endTime = new Date();
         execStep.duration = execStep.endTime - execStep.startTime;
         currentInput = result;
+        
+        // 记录步骤成功
+        await addLog(execution.id, i + 1, step.name, 'info', `步骤完成，耗时 ${execStep.duration}ms`, {
+          duration: execStep.duration,
+          output: result.substring(0, 200),
+          success: true
+        });
         
         // 尝试解析卡片 JSON（最后一步）
         if (i === workflow.steps.length - 1) {
@@ -404,9 +486,10 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
             const jsonMatch = result.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               cardData = JSON.parse(jsonMatch[0]);
+              await addLog(execution.id, i + 1, step.name, 'info', '成功解析卡片JSON');
             }
           } catch (e) {
-            // JSON 解析失败，不影响流程
+            await addLog(execution.id, i + 1, step.name, 'warn', `JSON解析失败: ${e.message}`);
           }
         }
         
@@ -425,6 +508,7 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
             stepName: step.name,
             success: true,
             duration: execStep.duration,
+            detailStatus: execStep.detailStatus,
             output: result.substring(0, 200) + (result.length > 200 ? '...' : '')
           });
         }
@@ -434,6 +518,13 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
         execStep.error = error.message;
         execStep.endTime = new Date();
         execStep.duration = execStep.endTime - execStep.startTime;
+        
+        // 记录步骤失败
+        await addLog(execution.id, i + 1, step.name, 'error', `步骤失败: ${error.message}`, {
+          error: error.message,
+          duration: execStep.duration,
+          success: false
+        });
         
         // 更新智能体统计
         const agent = await Agent.findOne({ id: step.agentId });
@@ -530,11 +621,21 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
     workflow.stats.successRuns += 1;
     workflow.lastStatus = 'success';
     
+    await addLog(execution.id, 0, '工作流', 'info', '工作流执行成功', {
+      duration: execution.duration,
+      success: true
+    });
+    
   } catch (error) {
     execution.status = 'failed';
     execution.error = error.message;
     workflow.stats.failedRuns += 1;
     workflow.lastStatus = 'failed';
+    
+    await addLog(execution.id, 0, '工作流', 'error', `工作流执行失败: ${error.message}`, {
+      error: error.message,
+      success: false
+    });
     
     // 如果有 demandId，更新需求状态为失败
     if (typeof input === 'object' && input.demandId) {
@@ -558,28 +659,6 @@ async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
   
   return execution;
 }
-
-/**
- * 获取工作流执行历史
- */
-router.get('/:id/executions', async (req, res) => {
-  try {
-    const { limit = 20 } = req.query;
-    const executions = await WorkflowExecution.find({ workflowId: req.params.id })
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit));
-    
-    res.json({
-      success: true,
-      executions
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
 
 /**
  * 获取执行详情
@@ -608,7 +687,96 @@ router.get('/execution/:executionId', async (req, res) => {
 });
 
 /**
- * 获取正在执行的执行记录
+ * 获取所有正在执行的记录（监控用）
+ * 注意：必须在 /:id 路由前定义
+ */
+router.get('/executions/running', async (req, res) => {
+  try {
+    const executions = await WorkflowExecution.find({ status: 'running' })
+      .sort({ startTime: -1 })
+      .limit(20);
+    
+    res.json({
+      success: true,
+      executions
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取最近执行记录（监控用）
+ * 注意：必须在 /:id 路由前定义
+ */
+router.get('/executions/recent', async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+    const executions = await WorkflowExecution.find({
+      status: { $ne: 'running' }
+    })
+      .sort({ startTime: -1 })
+      .limit(parseInt(limit));
+    
+    res.json({
+      success: true,
+      executions
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取执行日志
+ */
+router.get('/execution/:executionId/logs', async (req, res) => {
+  try {
+    const logs = await StepLog.find({ executionId: req.params.executionId })
+      .sort({ createdAt: 1 });
+    
+    res.json({
+      success: true,
+      logs
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取工作流执行历史
+ */
+router.get('/:id/executions', async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+    const executions = await WorkflowExecution.find({ workflowId: req.params.id })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+    
+    res.json({
+      success: true,
+      executions
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取指定工作流正在执行的记录
  */
 router.get('/:id/executions/running', async (req, res) => {
   try {

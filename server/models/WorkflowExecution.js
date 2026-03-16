@@ -29,6 +29,7 @@ const workflowExecutionSchema = new mongoose.Schema({
     agentId: { type: String },
     agentName: { type: String },
     status: { type: String, enum: ['pending', 'running', 'success', 'failed', 'skipped'] },
+    detailStatus: { type: String }, // 详细状态：初始化中、获取需求中、分析内容中、处理完成等
     startTime: { type: Date },
     endTime: { type: Date },
     duration: { type: Number },

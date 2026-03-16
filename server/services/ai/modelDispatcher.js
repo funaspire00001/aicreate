@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 配置文件路径
-const CONFIG_PATH = path.join(__dirname, '../../config/models.json');
+const CONFIG_PATH = path.join(__dirname, '../../../config/models.json');
 
 // 缓存
 let configCache = null;
@@ -38,11 +38,13 @@ function loadConfig() {
 }
 
 /**
- * 获取所有可用模型
+ * 获取所有可用模型（包含云端和本地）
  */
 export function getAvailableModels() {
   const config = loadConfig();
-  return config.models || [];
+  const models = config.models || [];
+  const localModels = config.localModels || [];
+  return [...models, ...localModels];
 }
 
 /**
@@ -67,8 +69,19 @@ export function getModelsByCapability(capability) {
  * @param {string} modelId - 模型 ID
  */
 export function getModelConfig(modelId) {
-  const models = getAvailableModels();
-  return models.find(m => m.id === modelId);
+  const config = loadConfig();
+  const models = config.models || [];
+  const localModels = config.localModels || [];
+  
+  // 先从云端模型查找
+  let model = models.find(m => m.id === modelId);
+  
+  // 如果没找到，从本地模型查找
+  if (!model) {
+    model = localModels.find(m => m.id === modelId);
+  }
+  
+  return model;
 }
 
 /**

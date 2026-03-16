@@ -14,6 +14,10 @@
             <span class="nav-icon">⚙️</span>
             <span class="nav-text">工作流管理</span>
           </router-link>
+          <router-link to="/monitor" class="nav-item">
+            <span class="nav-icon">📡</span>
+            <span class="nav-text">执行监控</span>
+          </router-link>
           <router-link to="/agents" class="nav-item">
             <span class="nav-icon">👥</span>
             <span class="nav-text">智能体管理</span>
@@ -34,10 +38,10 @@
             <span class="nav-icon">🃏</span>
             <span class="nav-text">卡片管理</span>
           </router-link>
-          <a href="http://localhost:3001/admin" target="_blank" class="nav-item">
+          <router-link to="/data" class="nav-item">
             <span class="nav-icon">🗄️</span>
-            <span class="nav-text">数据库管理</span>
-          </a>
+            <span class="nav-text">数据管理</span>
+          </router-link>
         </div>
       </nav>
       <main class="main-content">

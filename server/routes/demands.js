@@ -44,6 +44,48 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * 统计信息（必须在 /:id 之前定义）
+ */
+router.get('/stats/overview', async (req, res) => {
+  try {
+    const [
+      total,
+      pending,
+      processing,
+      completed,
+      failed,
+      todayCount
+    ] = await Promise.all([
+      Demand.countDocuments(),
+      Demand.countDocuments({ status: 'pending' }),
+      Demand.countDocuments({ status: 'processing' }),
+      Demand.countDocuments({ status: 'completed' }),
+      Demand.countDocuments({ status: 'failed' }),
+      Demand.countDocuments({
+        createdAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+      })
+    ]);
+    
+    res.json({
+      success: true,
+      stats: {
+        total,
+        pending,
+        processing,
+        completed,
+        failed,
+        todayCount
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * 获取单个需求
  */
 router.get('/:id', async (req, res) => {
@@ -209,48 +251,6 @@ router.post('/batch', async (req, res) => {
       success: true,
       message: `成功导入 ${newDemands.length} 条需求`,
       count: newDemands.length
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * 统计信息
- */
-router.get('/stats/overview', async (req, res) => {
-  try {
-    const [
-      total,
-      pending,
-      processing,
-      completed,
-      failed,
-      todayCount
-    ] = await Promise.all([
-      Demand.countDocuments(),
-      Demand.countDocuments({ status: 'pending' }),
-      Demand.countDocuments({ status: 'processing' }),
-      Demand.countDocuments({ status: 'completed' }),
-      Demand.countDocuments({ status: 'failed' }),
-      Demand.countDocuments({
-        createdAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
-      })
-    ]);
-    
-    res.json({
-      success: true,
-      stats: {
-        total,
-        pending,
-        processing,
-        completed,
-        failed,
-        todayCount
-      }
     });
   } catch (error) {
     res.status(500).json({
