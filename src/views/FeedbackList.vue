@@ -202,11 +202,20 @@ const changePage = (page) => {
 const handleProcess = async (item) => {
   processing.value = item.feedbackId
   try {
-    // 调用创作接口
-    const data = await dashboardApi.createCard({
-      theme: item.content,
-      model: 'ollama-qwen'
+    // 使用工作流引擎创作卡片
+    const response = await fetch('http://localhost:3001/api/workflows/knowledge-card-flow/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: {
+          theme: item.content,
+          style: '',
+          autoPublish: false
+        }
+      })
     })
+
+    const data = await response.json()
 
     if (data.success) {
       // 更新反馈状态

@@ -13,7 +13,7 @@ const workflowExecutionSchema = new mongoose.Schema({
   },
   
   // 输入输出
-  input: { type: String },
+  input: { type: mongoose.Schema.Types.Mixed },
   output: { type: mongoose.Schema.Types.Mixed },
   error: { type: String },
   

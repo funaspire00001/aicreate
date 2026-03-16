@@ -24,6 +24,9 @@
             <button class="action-btn run-btn" @click="runWorkflow(workflow.id)">
               ▶ 运行
             </button>
+            <button class="action-btn history-btn" @click="showExecutionHistory(workflow)">
+              历史
+            </button>
             <button class="action-btn edit-btn" @click="editWorkflow(workflow)">
               编辑
             </button>
@@ -51,6 +54,12 @@
           <div class="detail-row">
             <span class="detail-label">最后运行：</span>
             <span class="detail-value">{{ formatTime(workflow.lastRun) }}</span>
+          </div>
+          <div class="detail-row" v-if="workflow.lastStatus">
+            <span class="detail-label">执行状态：</span>
+            <span :class="['execution-status', workflow.lastStatus]">
+              {{ getStatusText(workflow.lastStatus) }}
+            </span>
           </div>
         </div>
 
@@ -198,6 +207,153 @@
         </div>
       </div>
     </div>
+
+    <!-- 执行历史模态框 -->
+    <div v-if="showHistoryModal" class="modal-overlay">
+      <div class="modal-content history-modal">
+        <div class="modal-header">
+          <h2>执行历史 - {{ selectedWorkflow?.name }}</h2>
+          <button class="close-btn" @click="closeHistoryModal">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div v-if="loadingHistory" class="loading-state">
+            加载中...
+          </div>
+          
+          <div v-else-if="executionHistory.length === 0" class="empty-state">
+            暂无执行记录
+          </div>
+          
+          <div v-else class="history-list">
+            <div 
+              v-for="execution in executionHistory" 
+              :key="execution.id"
+              class="history-item"
+              @click="showExecutionDetail(execution)"
+            >
+              <div class="history-header">
+                <span :class="['status-badge', execution.status]">
+                  {{ getStatusText(execution.status) }}
+                </span>
+                <span class="history-time">{{ formatTime(execution.startTime) }}</span>
+              </div>
+              <div class="history-info">
+                <div class="info-row">
+                  <span class="info-label">输入：</span>
+                  <span class="info-value">{{ truncateText(execution.input, 50) }}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">耗时：</span>
+                  <span class="info-value">{{ execution.duration || 0 }}ms</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">步骤：</span>
+                  <span class="info-value">
+                    {{ execution.steps?.filter(s => s.status === 'success').length || 0 }}/{{ execution.steps?.length || 0 }} 完成
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 执行详情模态框 -->
+    <div v-if="showDetailModal" class="modal-overlay" @click.self="closeDetailModal">
+      <div class="modal-content detail-modal">
+        <div class="modal-header">
+          <h2>执行详情</h2>
+          <button class="close-btn" @click="closeDetailModal">&times;</button>
+        </div>
+
+        <div class="modal-body" v-if="selectedExecution">
+          <div class="detail-section">
+            <h3>基本信息</h3>
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">执行ID：</span>
+                <span class="info-value">{{ selectedExecution.id }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">状态：</span>
+                <span :class="['status-badge', selectedExecution.status]">
+                  {{ getStatusText(selectedExecution.status) }}
+                </span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">开始时间：</span>
+                <span class="info-value">{{ formatTime(selectedExecution.startTime) }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">结束时间：</span>
+                <span class="info-value">{{ formatTime(selectedExecution.endTime) }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">总耗时：</span>
+                <span class="info-value">{{ selectedExecution.duration || 0 }}ms</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">触发方式：</span>
+                <span class="info-value">{{ selectedExecution.triggeredBy || 'manual' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <h3>输入内容</h3>
+            <div class="code-block">
+              {{ formatInput(selectedExecution.input) }}
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <h3>步骤执行详情</h3>
+            <div class="steps-detail">
+              <div 
+                v-for="(step, index) in selectedExecution.steps" 
+                :key="index"
+                class="step-detail-item"
+              >
+                <div class="step-header-row">
+                  <span class="step-num">{{ index + 1 }}</span>
+                  <span class="step-title">{{ step.name }}</span>
+                  <span :class="['step-status', step.status]">
+                    {{ getStatusText(step.status) }}
+                  </span>
+                  <span class="step-duration" v-if="step.duration">{{ step.duration }}ms</span>
+                </div>
+                <div class="step-info" v-if="step.agentName">
+                  <span class="info-label">智能体：</span>
+                  <span class="info-value">{{ step.agentName }}</span>
+                </div>
+                <div class="step-info" v-if="step.error">
+                  <span class="info-label error">错误：</span>
+                  <span class="info-value error">{{ step.error }}</span>
+                </div>
+                <div class="step-output" v-if="step.output">
+                  <div class="output-header" @click="toggleStepOutput(index)">
+                    <span>输出内容</span>
+                    <span class="toggle-icon">{{ expandedSteps.includes(index) ? '▼' : '▶' }}</span>
+                  </div>
+                  <div class="output-content" v-if="expandedSteps.includes(index)">
+                    {{ step.output }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section" v-if="selectedExecution.output">
+            <h3>最终输出</h3>
+            <div class="code-block">
+              {{ truncateText(selectedExecution.output, 500) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -209,6 +365,15 @@ const availableAgents = ref([])
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 const editingWorkflowId = ref(null)
+
+// 执行历史相关
+const showHistoryModal = ref(false)
+const showDetailModal = ref(false)
+const selectedWorkflow = ref(null)
+const executionHistory = ref([])
+const selectedExecution = ref(null)
+const loadingHistory = ref(false)
+const expandedSteps = ref([])
 
 const formData = ref({
   name: '',
@@ -351,6 +516,85 @@ const closeModal = () => {
     enabled: true,
     steps: []
   }
+}
+
+// 执行历史相关函数
+const showExecutionHistory = async (workflow) => {
+  selectedWorkflow.value = workflow
+  showHistoryModal.value = true
+  loadingHistory.value = true
+  executionHistory.value = []
+  
+  try {
+    const response = await fetch(`http://localhost:3001/api/workflows/${workflow.id}/executions`)
+    const data = await response.json()
+    if (data.success) {
+      executionHistory.value = data.executions || []
+    }
+  } catch (error) {
+    console.error('获取执行历史失败:', error)
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+const closeHistoryModal = () => {
+  showHistoryModal.value = false
+  selectedWorkflow.value = null
+  executionHistory.value = []
+}
+
+const showExecutionDetail = async (execution) => {
+  try {
+    const response = await fetch(`http://localhost:3001/api/workflows/execution/${execution.id}`)
+    const data = await response.json()
+    if (data.success) {
+      selectedExecution.value = data.execution
+      expandedSteps.value = []
+      showDetailModal.value = true
+    }
+  } catch (error) {
+    console.error('获取执行详情失败:', error)
+  }
+}
+
+const closeDetailModal = () => {
+  showDetailModal.value = false
+  selectedExecution.value = null
+  expandedSteps.value = []
+}
+
+const toggleStepOutput = (index) => {
+  const idx = expandedSteps.value.indexOf(index)
+  if (idx > -1) {
+    expandedSteps.value.splice(idx, 1)
+  } else {
+    expandedSteps.value.push(index)
+  }
+}
+
+const getStatusText = (status) => {
+  const statusMap = {
+    pending: '等待中',
+    running: '执行中',
+    success: '成功',
+    failed: '失败'
+  }
+  return statusMap[status] || status
+}
+
+const truncateText = (text, maxLength = 100) => {
+  if (!text) return ''
+  const str = typeof text === 'object' ? JSON.stringify(text) : text
+  return str.length > maxLength ? str.substring(0, maxLength) + '...' : str
+}
+
+const formatInput = (input) => {
+  if (!input) return ''
+  if (typeof input === 'object') {
+    return JSON.stringify(input, null, 2)
+  }
+  return input
 }
 
 onMounted(async () => {
@@ -797,5 +1041,300 @@ onMounted(async () => {
 .save-btn:hover {
   background: #40a9ff;
   border-color: #40a9ff;
+}
+
+/* 执行历史按钮 */
+.history-btn:hover {
+  border-color: #722ed1;
+  color: #722ed1;
+}
+
+/* 执行状态 */
+.execution-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.execution-status.success {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.execution-status.failed {
+  background: #fff1f0;
+  color: #ff4d4f;
+}
+
+.execution-status.running {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+/* 历史模态框 */
+.history-modal {
+  max-width: 800px;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-item {
+  background: #f9f9f9;
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid #e8e8e8;
+}
+
+.history-item:hover {
+  background: #f0f5ff;
+  border-color: #1890ff;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.status-badge {
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.success {
+  background: #f6ffed;
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+}
+
+.status-badge.failed {
+  background: #fff1f0;
+  color: #ff4d4f;
+  border: 1px solid #ffccc7;
+}
+
+.status-badge.running {
+  background: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+}
+
+.status-badge.pending {
+  background: #f5f5f5;
+  color: #999;
+  border: 1px solid #d9d9d9;
+}
+
+.history-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.info-row {
+  display: flex;
+  font-size: 13px;
+}
+
+.info-label {
+  color: #999;
+  width: 60px;
+  flex-shrink: 0;
+}
+
+.info-value {
+  color: #333;
+}
+
+/* 执行详情模态框 */
+.detail-modal {
+  max-width: 900px;
+}
+
+.detail-section {
+  margin-bottom: 24px;
+}
+
+.detail-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+}
+
+.info-item .info-label {
+  color: #999;
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.info-item .info-value {
+  color: #333;
+}
+
+.code-block {
+  background: #f5f5f5;
+  border-radius: 6px;
+  padding: 12px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.steps-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.step-detail-item {
+  background: #fafafa;
+  border-radius: 6px;
+  padding: 12px;
+  border: 1px solid #e8e8e8;
+}
+
+.step-header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #1890ff;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.step-title {
+  font-weight: 500;
+  flex: 1;
+}
+
+.step-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.step-status.success {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.step-status.failed {
+  background: #fff1f0;
+  color: #ff4d4f;
+}
+
+.step-status.running {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+.step-status.pending {
+  background: #f5f5f5;
+  color: #999;
+}
+
+.step-duration {
+  font-size: 12px;
+  color: #999;
+}
+
+.step-info {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.step-info .info-label.error {
+  color: #ff4d4f;
+}
+
+.step-info .info-value.error {
+  color: #ff4d4f;
+}
+
+.step-output {
+  margin-top: 8px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+}
+
+.output-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f0f0f0;
+  cursor: pointer;
+  font-size: 13px;
+  color: #666;
+}
+
+.output-header:hover {
+  background: #e6e6e6;
+}
+
+.toggle-icon {
+  font-size: 10px;
+}
+
+.output-content {
+  padding: 12px;
+  background: #fff;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
 }
 </style>

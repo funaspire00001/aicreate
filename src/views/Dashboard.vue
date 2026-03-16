@@ -32,10 +32,11 @@
             </button>
           </div>
           <div class="style-options">
-            <label>模型：</label>
-            <select v-model="createModel">
-              <option value="ollama-qwen">Ollama Qwen3.5</option>
-              <option value="doubao">豆包</option>
+            <label>工作流：</label>
+            <select v-model="selectedWorkflowId" :disabled="creating">
+              <option v-for="wf in availableWorkflows" :key="wf.id" :value="wf.id">
+                {{ wf.name }}
+              </option>
             </select>
             <label>保存：</label>
             <select v-model="autoPublish">
@@ -264,7 +265,8 @@ const filteredLogs = computed(() => {
 // 创作相关
 const createTheme = ref('')
 const createStyle = ref('')
-const createModel = ref('ollama-qwen')  // 默认使用 Ollama
+const selectedWorkflowId = ref('')
+const availableWorkflows = ref([])
 const autoPublish = ref(false)  // 默认保存到本地
 const creating = ref(false)
 const createResult = ref(null)
@@ -340,9 +342,30 @@ const addLogEntry = (type, message, stepOutput = null) => {
   clientLogs.value.push({ type, message, time, stepOutput })
 }
 
-// 创作卡片
+// 获取可用工作流列表
+const fetchWorkflows = async () => {
+  try {
+    const response = await fetch('http://localhost:3001/api/workflows')
+    const data = await response.json()
+    if (data.success) {
+      availableWorkflows.value = data.workflows.filter(w => w.enabled)
+      // 默认选择第一个工作流
+      if (availableWorkflows.value.length > 0 && !selectedWorkflowId.value) {
+        selectedWorkflowId.value = availableWorkflows.value[0].id
+      }
+    }
+  } catch (err) {
+    console.error('获取工作流列表失败:', err)
+  }
+}
+
+// 创作卡片（使用工作流引擎）
 const handleCreate = async () => {
   if (!createTheme.value.trim() || creating.value) return
+  if (!selectedWorkflowId.value) {
+    addLogEntry('error', '请先选择一个工作流')
+    return
+  }
   
   creating.value = true
   createError.value = null
@@ -351,17 +374,19 @@ const handleCreate = async () => {
   generatingStatus.value = `生成中，需求：${currentGeneratingTheme.value}`
   
   const theme = createTheme.value.trim()
+  const workflowId = selectedWorkflowId.value
   
   try {
-    // 使用 SSE 方式发送请求
-    const response = await fetch('http://localhost:3001/api/generate', {
+    // 使用 SSE 方式调用工作流执行 API
+    const response = await fetch(`http://localhost:3001/api/workflows/${workflowId}/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        theme,
-        style: createStyle.value,
-        model: createModel.value,
-        autoPublish: autoPublish.value,
+        input: {
+          theme,
+          style: createStyle.value,
+          autoPublish: autoPublish.value
+        },
         stream: true  // 启用 SSE
       })
     })
@@ -392,13 +417,17 @@ const handleCreate = async () => {
           
           switch (event) {
             case 'start':
-              addLogEntry('info', `开始生成: ${data.theme} (模型: ${data.model})`)
+              addLogEntry('info', `开始执行工作流: ${data.workflowName || workflowId}`)
               break
               
-            case 'step':
-              const stepMsg = `步骤${data.step} ${data.name} 完成 (${data.duration}ms)`
+            case 'step_start':
+              addLogEntry('info', `步骤 ${data.stepIndex + 1}/${data.totalSteps}: ${data.stepName}`)
+              generatingStatus.value = `生成中，需求：${currentGeneratingTheme.value} - ${data.stepName}`
+              break
+              
+            case 'step_complete':
+              const stepMsg = `步骤 ${data.stepIndex + 1} ${data.stepName} 完成 (${data.duration}ms)`
               addLogEntry(data.success ? 'success' : 'error', stepMsg, data.output)
-              generatingStatus.value = `生成中，需求：${currentGeneratingTheme.value} - ${data.name}`
               break
               
             case 'saved':
@@ -419,7 +448,7 @@ const handleCreate = async () => {
               createTheme.value = ''
               generatingStatus.value = '处理日志'
               currentGeneratingTheme.value = ''
-              addLogEntry('success', `生成完成！总耗时: ${data.totalDuration}ms`)
+              addLogEntry('success', `工作流执行完成！总耗时: ${data.totalDuration}ms`)
               fetchDashboard()
               break
               
@@ -447,6 +476,7 @@ const handleCreate = async () => {
 
 onMounted(() => {
   fetchDashboard()
+  fetchWorkflows()
   fetchProcessingStatus()
   checkBackendHealth()
   

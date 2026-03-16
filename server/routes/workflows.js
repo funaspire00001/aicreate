@@ -212,7 +212,15 @@ router.delete('/:id', async (req, res) => {
 });
 
 /**
- * 运行工作流
+ * SSE 事件发送辅助函数
+ */
+function sendSSE(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+/**
+ * 运行工作流（支持 SSE 流式推送）
  */
 router.post('/:id/run', async (req, res) => {
   try {
@@ -232,8 +240,16 @@ router.post('/:id/run', async (req, res) => {
       });
     }
     
-    const { input } = req.body;
+    const { input, stream } = req.body;
     const executionId = uuidv4();
+    
+    // 如果请求 SSE 流式响应
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+    }
     
     // 创建执行记录
     const execution = new WorkflowExecution({
@@ -261,28 +277,64 @@ router.post('/:id/run', async (req, res) => {
     workflow.stats.totalRuns += 1;
     await workflow.save();
     
-    // 异步执行工作流
-    executeWorkflowAsync(execution, workflow, input);
+    // SSE: 发送开始事件
+    if (stream) {
+      sendSSE(res, 'start', {
+        executionId,
+        workflowId: workflow.id,
+        workflowName: workflow.name,
+        totalSteps: workflow.steps.length
+      });
+    }
     
-    res.json({
-      success: true,
-      message: '工作流已启动',
-      executionId,
-      workflowId: workflow.id
-    });
+    // 执行工作流
+    const result = await executeWorkflowWithSSE(execution, workflow, input, stream ? res : null);
+    
+    // SSE: 发送完成事件
+    if (stream) {
+      sendSSE(res, 'complete', {
+        executionId,
+        status: execution.status,
+        output: execution.output,
+        totalDuration: execution.duration,
+        error: execution.error
+      });
+      res.end();
+    } else {
+      res.json({
+        success: true,
+        message: '工作流执行完成',
+        executionId,
+        workflowId: workflow.id,
+        status: execution.status,
+        output: execution.output,
+        duration: execution.duration
+      });
+    }
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    if (res.headersSent) {
+      sendSSE(res, 'error', { error: error.message });
+      res.end();
+    } else {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
   }
 });
 
 /**
- * 异步执行工作流
+ * 执行工作流（支持 SSE 实时推送）
  */
-async function executeWorkflowAsync(execution, workflow, input) {
-  let currentInput = input || '';
+async function executeWorkflowWithSSE(execution, workflow, input, sseRes) {
+  let currentInput = typeof input === 'object' ? JSON.stringify(input) : (input || '');
+  let cardData = null;
+  
+  // 如果 input 是对象，提取主题
+  if (typeof input === 'object' && input.theme) {
+    currentInput = input.theme;
+  }
   
   try {
     for (let i = 0; i < workflow.steps.length; i++) {
@@ -293,6 +345,16 @@ async function executeWorkflowAsync(execution, workflow, input) {
       execStep.startTime = new Date();
       execStep.input = currentInput;
       await execution.save();
+      
+      // SSE: 发送步骤开始事件
+      if (sseRes) {
+        sendSSE(sseRes, 'step_start', {
+          stepIndex: i,
+          totalSteps: workflow.steps.length,
+          stepName: step.name,
+          agentName: step.agentName
+        });
+      }
       
       try {
         // 获取智能体配置
@@ -308,9 +370,14 @@ async function executeWorkflowAsync(execution, workflow, input) {
         
         // 构建提示词
         const systemPrompt = agent.prompt;
-        const userPrompt = step.prompt 
+        let userPrompt = step.prompt 
           ? `${step.prompt}\n\n输入内容：${currentInput}`
           : currentInput;
+        
+        // 如果有风格参数，添加到提示词
+        if (typeof input === 'object' && input.style) {
+          userPrompt += `\n\n风格要求：${input.style}`;
+        }
         
         // 调用模型
         const result = await callModel(
@@ -329,6 +396,19 @@ async function executeWorkflowAsync(execution, workflow, input) {
         execStep.duration = execStep.endTime - execStep.startTime;
         currentInput = result;
         
+        // 尝试解析卡片 JSON（最后一步）
+        if (i === workflow.steps.length - 1) {
+          try {
+            // 尝试从结果中提取 JSON
+            const jsonMatch = result.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              cardData = JSON.parse(jsonMatch[0]);
+            }
+          } catch (e) {
+            // JSON 解析失败，不影响流程
+          }
+        }
+        
         // 更新智能体统计
         agent.stats.totalCalls += 1;
         agent.stats.successCalls += 1;
@@ -336,6 +416,17 @@ async function executeWorkflowAsync(execution, workflow, input) {
           (agent.stats.avgDuration * (agent.stats.totalCalls - 1) + execStep.duration) / agent.stats.totalCalls
         );
         await agent.save();
+        
+        // SSE: 发送步骤完成事件
+        if (sseRes) {
+          sendSSE(sseRes, 'step_complete', {
+            stepIndex: i,
+            stepName: step.name,
+            success: true,
+            duration: execStep.duration,
+            output: result.substring(0, 200) + (result.length > 200 ? '...' : '')
+          });
+        }
         
       } catch (error) {
         execStep.status = 'failed';
@@ -351,6 +442,16 @@ async function executeWorkflowAsync(execution, workflow, input) {
           await agent.save();
         }
         
+        // SSE: 发送步骤失败事件
+        if (sseRes) {
+          sendSSE(sseRes, 'step_complete', {
+            stepIndex: i,
+            stepName: step.name,
+            success: false,
+            error: error.message
+          });
+        }
+        
         throw error;
       }
     }
@@ -358,6 +459,30 @@ async function executeWorkflowAsync(execution, workflow, input) {
     // 执行成功
     execution.status = 'success';
     execution.output = currentInput;
+    
+    // 保存卡片到本地
+    if (cardData) {
+      const LocalCard = (await import('../models/LocalCard.js')).default;
+      const card = new LocalCard({
+        id: uuidv4(),
+        name: cardData.title || cardData.name || '未命名卡片',
+        theme: typeof input === 'object' ? input.theme : input,
+        style: typeof input === 'object' ? input.style : '',
+        data: cardData,
+        source: 'workflow',
+        workflowId: workflow.id,
+        executionId: execution.id
+      });
+      await card.save();
+      
+      // SSE: 发送保存事件
+      if (sseRes) {
+        sendSSE(sseRes, 'saved', {
+          cardId: card.id,
+          cardName: card.name
+        });
+      }
+    }
     
     // 更新工作流统计
     workflow.stats.successRuns += 1;
@@ -375,6 +500,8 @@ async function executeWorkflowAsync(execution, workflow, input) {
   
   await execution.save();
   await workflow.save();
+  
+  return execution;
 }
 
 /**

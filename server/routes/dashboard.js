@@ -2,9 +2,6 @@ import express from 'express';
 import Request from '../models/Request.js';
 import Knowledge from '../models/Knowledge.js';
 import AgentRun from '../models/AgentRun.js';
-import { generateCard } from '../services/aiService.js';
-import { publishCardDraft } from '../services/cardService.js';
-import { addLog, getStats, incrementStats } from '../services/stateStore.js';
 
 const router = express.Router();
 
@@ -92,68 +89,6 @@ router.get('/', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// 创作卡片
-router.post('/create', async (req, res) => {
-  try {
-    const { theme, style, model } = req.body;
-    
-    if (!theme || !theme.trim()) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '请输入卡片主题' 
-      });
-    }
-    
-    const modelId = model || 'doubao';
-    const modelName = modelId === 'ollama-qwen' ? 'Ollama Qwen3.5' : '豆包';
-    
-    addLog('info', `开始创作卡片: ${theme} (模型: ${modelName})`);
-    
-    // 1. 调用 AI 生成卡片
-    addLog('info', `正在调用 ${modelName} 生成卡片...`);
-    const cardData = await generateCard(theme, style, modelId);
-    addLog('success', 'AI 生成卡片成功');
-    
-    // 2. 发布为草稿
-    const feedback = {
-      feedbackType: 'SUGGESTION',
-      content: theme,
-      resourceId: null
-    };
-    
-    addLog('info', '正在发布卡片草稿...');
-    const result = await publishCardDraft(cardData, feedback);
-    addLog('success', `卡片发布成功: ${result.cardName}`);
-    
-    // 更新统计
-    incrementStats('todayTotal');
-    incrementStats('todaySuccess');
-    incrementStats('totalGenerated');
-    
-    res.json({
-      success: true,
-      data: {
-        cardId: result.cardId,
-        cardName: result.cardName,
-        theme: cardData.theme || theme,
-        status: 'DRAFT',
-        model: modelName,
-        message: '卡片已生成并保存为草稿，可在小程序后台审核发布'
-      }
-    });
-    
-  } catch (error) {
-    addLog('error', `创作卡片失败: ${error.message}`);
-    incrementStats('todayTotal');
-    incrementStats('todayFailed');
-    
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || '创作失败，请重试' 
-    });
   }
 });
 

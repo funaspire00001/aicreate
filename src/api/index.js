@@ -29,6 +29,7 @@ async function request(path, options = {}) {
 // ============ 仪表盘 ============
 export const dashboardApi = {
   get: () => request('/api/dashboard'),
+  // 已废弃：请使用工作流引擎 POST /api/workflows/:id/run
   createCard: (data) => request('/api/generate', {
     method: 'POST',
     body: JSON.stringify(data),
