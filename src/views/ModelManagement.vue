@@ -5,9 +5,14 @@
         <h1>模型管理</h1>
         <p class="subtitle">管理和配置 AI 模型</p>
       </div>
-      <button class="add-btn" @click="openAddModal">
-        <span>+</span> 添加模型
-      </button>
+      <div class="header-actions">
+        <button class="config-btn" @click="showConfigModal = true">
+          <span>📄</span> 查看配置
+        </button>
+        <button class="add-btn" @click="openAddModal">
+          <span>+</span> 添加模型
+        </button>
+      </div>
     </div>
     
     <!-- 统计卡片 -->
@@ -339,11 +344,128 @@
         </div>
       </div>
     </div>
+    
+    <!-- 配置文件查看/编辑弹窗 -->
+    <div v-if="showConfigModal" class="modal-overlay" @click.self="showConfigModal = false">
+      <div class="modal config-modal">
+        <div class="modal-header">
+          <h2>📄 配置文件</h2>
+          <div class="modal-header-actions">
+            <button class="text-btn" @click="copyConfig" :disabled="!rawConfig">
+              {{ configCopied ? '已复制!' : '复制' }}
+            </button>
+            <button class="close-btn" @click="showConfigModal = false">×</button>
+          </div>
+        </div>
+        
+        <div class="modal-body">
+          <div class="config-tabs">
+            <button 
+              :class="['config-tab', { active: configViewMode === 'visual' }]"
+              @click="configViewMode = 'visual'"
+            >
+              可视化
+            </button>
+            <button 
+              :class="['config-tab', { active: configViewMode === 'json' }]"
+              @click="configViewMode = 'json'"
+            >
+              JSON
+            </button>
+          </div>
+          
+          <!-- 可视化视图 -->
+          <div v-if="configViewMode === 'visual'" class="config-visual">
+            <!-- Ollama 配置 -->
+            <div class="config-section">
+              <h3>Ollama 配置</h3>
+              <div class="config-item">
+                <span class="config-key">apiUrl:</span>
+                <input v-model="configForm.ollama.apiUrl" class="config-input" />
+              </div>
+              <div class="config-item">
+                <span class="config-key">enabled:</span>
+                <input type="checkbox" v-model="configForm.ollama.enabled" />
+              </div>
+            </div>
+            
+            <!-- 模型列表 -->
+            <div class="config-section">
+              <h3>模型列表 ({{ configForm.models.length }})</h3>
+              <div v-for="(model, index) in configForm.models" :key="model.id" class="config-model-item">
+                <div class="model-item-header">
+                  <span class="model-item-index">#{{ index + 1 }}</span>
+                  <span class="model-item-name">{{ model.name }}</span>
+                  <span class="model-item-provider">{{ model.provider }}</span>
+                  <span class="model-item-status" :class="{ enabled: model.enabled }">
+                    {{ model.enabled ? '启用' : '禁用' }}
+                  </span>
+                </div>
+                <div class="model-item-details">
+                  <div class="detail-row">
+                    <span class="detail-key">id:</span>
+                    <input v-model="model.id" class="config-input small" />
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-key">model:</span>
+                    <input v-model="model.model" class="config-input small" />
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-key">apiUrl:</span>
+                    <input v-model="model.apiUrl" class="config-input" />
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-key">apiKey:</span>
+                    <input v-model="model.apiKey" type="password" class="config-input" placeholder="未设置" />
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-key">maxTokens:</span>
+                    <input v-model.number="model.maxTokens" type="number" class="config-input small" />
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-key">temperature:</span>
+                    <input v-model.number="model.temperature" type="number" step="0.1" class="config-input small" />
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-key">cost.input:</span>
+                    <input v-model.number="model.cost.input" type="number" step="0.0001" class="config-input small" />
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-key">cost.output:</span>
+                    <input v-model.number="model.cost.output" type="number" step="0.0001" class="config-input small" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- JSON 视图 -->
+          <div v-else class="config-json">
+            <textarea 
+              v-model="rawConfig" 
+              class="config-textarea"
+              spellcheck="false"
+            ></textarea>
+            <div v-if="configParseError" class="config-error">
+              {{ configParseError }}
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button class="action-btn secondary" @click="resetConfig">重置</button>
+          <button class="action-btn secondary" @click="showConfigModal = false">取消</button>
+          <button class="action-btn primary" @click="saveConfig" :disabled="savingConfig">
+            {{ savingConfig ? '保存中...' : '保存配置' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { modelsApi } from '../api'
 
 // 数据
@@ -400,6 +522,18 @@ const testError = ref('')
 // Ollama 配置弹窗
 const showOllamaConfig = ref(false)
 const ollamaConfigUrl = ref('')
+
+// 配置文件弹窗
+const showConfigModal = ref(false)
+const configViewMode = ref('visual') // 'visual' | 'json'
+const rawConfig = ref('')
+const configCopied = ref(false)
+const savingConfig = ref(false)
+const configParseError = ref('')
+const configForm = ref({
+  models: [],
+  ollama: { apiUrl: '', enabled: true }
+})
 
 // 计算属性
 const cloudModels = computed(() => models.value.filter(m => m.provider !== 'ollama'))
@@ -620,10 +754,113 @@ const saveOllamaConfig = async () => {
   }
 }
 
+// ============ 配置文件相关方法 ============
+
+// 加载配置文件到表单
+const loadConfigToForm = async () => {
+  try {
+    const response = await modelsApi.getConfig()
+    if (response.success) {
+      const config = response.data
+      configForm.value = {
+        models: config.models || [],
+        ollama: config.ollama || { apiUrl: 'http://localhost:11434', enabled: true }
+      }
+      rawConfig.value = JSON.stringify(configForm.value, null, 2)
+      configParseError.value = ''
+    }
+  } catch (err) {
+    console.error('加载配置失败:', err)
+    // 使用当前页面数据作为备份
+    configForm.value = {
+      models: JSON.parse(JSON.stringify(models.value)),
+      ollama: {
+        apiUrl: ollamaUrl.value,
+        enabled: true
+      }
+    }
+    rawConfig.value = JSON.stringify(configForm.value, null, 2)
+  }
+}
+
+// 监听弹窗打开，加载配置
+const openConfigModal = () => {
+  loadConfigToForm()
+  showConfigModal.value = true
+}
+
+// 重置配置
+const resetConfig = () => {
+  loadConfigToForm()
+}
+
+// 复制配置
+const copyConfig = async () => {
+  try {
+    await navigator.clipboard.writeText(rawConfig.value)
+    configCopied.value = true
+    setTimeout(() => { configCopied.value = false }, 2000)
+  } catch (err) {
+    console.error('复制失败:', err)
+  }
+}
+
+// 保存配置
+const saveConfig = async () => {
+  savingConfig.value = true
+  configParseError.value = ''
+  
+  try {
+    let configData
+    
+    if (configViewMode.value === 'json') {
+      // 从 JSON 文本解析
+      try {
+        configData = JSON.parse(rawConfig.value)
+      } catch (e) {
+        configParseError.value = 'JSON 格式错误: ' + e.message
+        savingConfig.value = false
+        return
+      }
+    } else {
+      // 从可视化表单获取
+      configData = JSON.parse(JSON.stringify(configForm.value))
+    }
+    
+    // 直接保存整个配置文件
+    const response = await modelsApi.saveConfig(configData)
+    
+    if (response.success) {
+      showConfigModal.value = false
+      fetchModels()
+    } else {
+      configParseError.value = response.error || '保存失败'
+    }
+  } catch (err) {
+    configParseError.value = err.message
+  } finally {
+    savingConfig.value = false
+  }
+}
+
+// 监听配置文件弹窗打开
+const handleConfigModalOpen = () => {
+  if (showConfigModal.value) {
+    loadConfigToForm()
+  }
+}
+
 // 初始化
 onMounted(() => {
   fetchModels()
   ollamaConfigUrl.value = ollamaUrl.value
+})
+
+// 监听配置弹窗打开
+watch(showConfigModal, (newVal) => {
+  if (newVal) {
+    loadConfigToForm()
+  }
 })
 </script>
 
@@ -1022,5 +1259,209 @@ h1 { margin: 0 0 8px 0; color: #333; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .models-grid { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
+}
+
+/* Header actions */
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.config-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  background: white;
+  color: #667eea;
+  border: 1px solid #667eea;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.config-btn:hover {
+  background: #667eea;
+  color: white;
+}
+
+/* Config modal */
+.config-modal {
+  max-width: 800px;
+  width: 95%;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.config-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 8px;
+}
+
+.config-tab {
+  padding: 8px 20px;
+  border: none;
+  background: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px 4px 0 0;
+  transition: all 0.2s;
+}
+
+.config-tab:hover {
+  color: #667eea;
+}
+
+.config-tab.active {
+  background: #667eea;
+  color: white;
+}
+
+.config-textarea {
+  width: 100%;
+  height: 500px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 13px;
+  padding: 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  resize: vertical;
+  line-height: 1.5;
+  background: #fafafa;
+}
+
+.config-error {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff1f0;
+  border: 1px solid #ffccc7;
+  border-radius: 8px;
+  color: #f5222d;
+  font-size: 13px;
+}
+
+/* Visual config */
+.config-visual {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.config-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.config-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 15px;
+  color: #333;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.config-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.config-key {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 13px;
+  color: #667eea;
+  min-width: 80px;
+}
+
+.config-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.config-input.small {
+  width: 150px;
+  flex: none;
+}
+
+.config-model-item {
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.model-item-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #eee;
+}
+
+.model-item-index {
+  font-size: 12px;
+  color: #999;
+}
+
+.model-item-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.model-item-provider {
+  font-size: 12px;
+  color: #667eea;
+  background: rgba(102,126,234,0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.model-item-status {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #999;
+}
+
+.model-item-status.enabled {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.model-item-details {
+  padding: 12px 16px;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.detail-key {
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 12px;
+  color: #666;
+  min-width: 100px;
 }
 </style>

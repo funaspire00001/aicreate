@@ -55,7 +55,7 @@ function httpRequest(url, options = {}) {
     });
     
     req.on('error', reject);
-    req.setTimeout(30000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    req.setTimeout(120000, () => { req.destroy(); reject(new Error('Request timeout')); });
     
     if (options.body) req.write(options.body);
     req.end();
@@ -73,6 +73,66 @@ function safeJsonParse(data) {
 }
 
 // ============ 路由 ============
+
+// 获取模型调用统计
+router.get('/stats', (req, res) => {
+  try {
+    // 导入 modelDispatcher 的统计功能
+    import('../services/ai/modelDispatcher.js').then(({ getModelStats, getCallLogs }) => {
+      const stats = getModelStats();
+      const logs = getCallLogs(50);
+      
+      res.json({
+        success: true,
+        data: {
+          stats,
+          recentCalls: logs
+        }
+      });
+    }).catch(err => {
+      // 如果导入失败，返回空数据
+      res.json({
+        success: true,
+        data: {
+          stats: {},
+          recentCalls: []
+        }
+      });
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 获取原始配置文件
+router.get('/config', (req, res) => {
+  try {
+    const config = readConfig();
+    res.json({ success: true, data: config });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 保存原始配置文件
+router.put('/config', (req, res) => {
+  try {
+    const config = req.body;
+    
+    // 验证基本结构
+    if (!config || typeof config !== 'object') {
+      return res.status(400).json({ success: false, error: '无效的配置格式' });
+    }
+    
+    if (writeConfig(config)) {
+      res.json({ success: true });
+    } else {
+      throw new Error('保存配置失败');
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // 获取所有模型列表
 router.get('/', async (req, res) => {

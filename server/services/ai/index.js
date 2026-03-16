@@ -3,28 +3,33 @@
  * 多步骤卡片生成
  */
 
-import { callDoubao } from './providers/doubao.js';
-import { callOllama } from './providers/ollama.js';
+import { callModel, getAvailableModels, createModelCaller, getModelStats, getCallLogs } from './modelDispatcher.js';
 import { analyzeRequirement } from './step1_analyze.js';
 import { designPlan } from './step2_design.js';
 import { generateCard } from './step3_generate.js';
 import { validateCard } from './step4_validate.js';
 
-// 支持的模型
-export const AVAILABLE_MODELS = [
-  { id: 'ollama-qwen', name: 'Ollama Qwen3.5', call: callOllama },
-  { id: 'doubao', name: '豆包', call: callDoubao }
-];
+/**
+ * 获取可用模型列表
+ */
+function getAvailableModelList() {
+  return getAvailableModels().map(m => ({
+    id: m.id,
+    name: m.name,
+    provider: m.provider
+  }));
+}
+
+// 导出可用模型（兼容旧接口）
+export const AVAILABLE_MODELS = {
+  get list() { return getAvailableModelList(); }
+};
 
 /**
- * 获取模型调用函数
+ * 获取模型调用函数（兼容旧接口）
  */
 function getModelCallFunction(modelId) {
-  const model = AVAILABLE_MODELS.find(m => m.id === modelId);
-  if (!model) {
-    throw new Error(`不支持的模型: ${modelId}`);
-  }
-  return model.call;
+  return createModelCaller(modelId);
 }
 
 /**
@@ -159,8 +164,15 @@ export async function executeStep(stepNum, userInput, model = 'ollama-qwen') {
 // 导出各步骤
 export { analyzeRequirement, designPlan, generateCard, validateCard };
 
+// 导出模型调度器功能
+export { callModel, getAvailableModels, getModelStats, getCallLogs };
+
 export default {
   generateCardWithSteps,
   executeStep,
-  AVAILABLE_MODELS
+  get AVAILABLE_MODELS() { return AVAILABLE_MODELS; },
+  callModel,
+  getAvailableModels,
+  getModelStats,
+  getCallLogs
 };

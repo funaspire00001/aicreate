@@ -160,16 +160,22 @@ export const modelsApi = {
   add: (model) => request('/api/models', { method: 'POST', body: model }),
   
   // 更新模型
-  update: (id, model) => request(`/api/models/${id}`, { method: 'PUT', body: model }),
+  update: (id, model) => request(`/api/models/${encodeURIComponent(id)}`, { method: 'PUT', body: model }),
   
   // 删除模型
-  delete: (id) => request(`/api/models/${id}`, { method: 'DELETE' }),
+  delete: (id) => request(`/api/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   
   // 测试模型
-  test: (id, testPrompt) => request(`/api/models/${id}/test`, { method: 'POST', body: { testPrompt } }),
+  test: (id, testPrompt) => request(`/api/models/${encodeURIComponent(id)}/test`, { method: 'POST', body: { testPrompt } }),
   
   // 更新 Ollama 配置
   updateOllamaConfig: (config) => request('/api/models/ollama/config', { method: 'PUT', body: config }),
+  
+  // 获取原始配置文件
+  getConfig: () => request('/api/models/config'),
+  
+  // 保存原始配置文件
+  saveConfig: (config) => request('/api/models/config', { method: 'PUT', body: config }),
 };
 
 export default {
