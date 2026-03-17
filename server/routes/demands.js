@@ -4,6 +4,7 @@ import KeyPoint from '../models/KeyPoint.js';
 import KnowledgeTree from '../models/KnowledgeTree.js';
 import CardPlan from '../models/CardPlan.js';
 import StepLog from '../models/StepLog.js';
+import Agent from '../models/Agent.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getAgentStatus } from '../services/agentScheduler.js';
 
@@ -139,6 +140,109 @@ router.get('/agents/:key/logs', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+/**
+ * 获取智能体详情（配置信息 + 数据库信息）
+ */
+router.get('/agents/:key/detail', async (req, res) => {
+  try {
+    const { key } = req.params;
+    
+    const roleMap = {
+      organizer: { modelRole: 'organizer', inputModel: 'Demand', outputModel: 'KeyPoint', inputField: 'consumedByKeyPoint', outputField: 'consumedByKnowledgeTree' },
+      architect: { modelRole: 'architect', inputModel: 'KeyPoint', outputModel: 'KnowledgeTree', inputField: 'consumedByKnowledgeTree', outputField: 'consumedByCardPlan' },
+      planner: { modelRole: 'planner', inputModel: 'KnowledgeTree', outputModel: 'CardPlan', inputField: 'consumedByCardPlan', outputField: 'consumedByCardGenerator' },
+      generator: { modelRole: 'generator', inputModel: 'CardPlan', outputModel: 'Demand', inputField: 'consumedByCardGenerator', outputField: null }
+    };
+    
+    const config = roleMap[key];
+    if (!config) {
+      return res.status(400).json({ success: false, error: '无效的智能体标识' });
+    }
+    
+    // 获取智能体配置
+    const agent = await Agent.findOne({ role: config.modelRole, enabled: true });
+    
+    // 获取统计数据
+    let inputStats = {}, outputStats = {}, currentData = [];
+    
+    if (config.inputModel === 'Demand') {
+      inputStats = {
+        total: await Demand.countDocuments({ status: 'processing' }),
+        pending: await Demand.countDocuments({ status: 'processing', [config.inputField]: false }),
+        consumed: await Demand.countDocuments({ [config.inputField]: true })
+      };
+      currentData = await Demand.find({ status: 'processing', [config.inputField]: false }).limit(5).sort({ createdAt: -1 });
+    } else if (config.inputModel === 'KeyPoint') {
+      inputStats = {
+        total: await KeyPoint.countDocuments({ status: 'completed' }),
+        pending: await KeyPoint.countDocuments({ status: 'completed', [config.inputField]: false }),
+        consumed: await KeyPoint.countDocuments({ [config.inputField]: true })
+      };
+      currentData = await KeyPoint.find({ status: 'completed', [config.inputField]: false }).limit(5).sort({ createdAt: -1 });
+    } else if (config.inputModel === 'KnowledgeTree') {
+      inputStats = {
+        total: await KnowledgeTree.countDocuments({ status: 'completed' }),
+        pending: await KnowledgeTree.countDocuments({ status: 'completed', [config.inputField]: false }),
+        consumed: await KnowledgeTree.countDocuments({ [config.inputField]: true })
+      };
+      currentData = await KnowledgeTree.find({ status: 'completed', [config.inputField]: false }).limit(5).sort({ createdAt: -1 });
+    } else if (config.inputModel === 'CardPlan') {
+      inputStats = {
+        total: await CardPlan.countDocuments({ status: 'completed' }),
+        pending: await CardPlan.countDocuments({ status: 'completed', [config.inputField]: false }),
+        consumed: await CardPlan.countDocuments({ [config.inputField]: true })
+      };
+      currentData = await CardPlan.find({ status: 'completed', [config.inputField]: false }).limit(5).sort({ createdAt: -1 });
+    }
+    
+    if (config.outputModel === 'KeyPoint') {
+      outputStats = {
+        total: await KeyPoint.countDocuments(),
+        completed: await KeyPoint.countDocuments({ status: 'completed' })
+      };
+    } else if (config.outputModel === 'KnowledgeTree') {
+      outputStats = {
+        total: await KnowledgeTree.countDocuments(),
+        completed: await KnowledgeTree.countDocuments({ status: 'completed' })
+      };
+    } else if (config.outputModel === 'CardPlan') {
+      outputStats = {
+        total: await CardPlan.countDocuments(),
+        completed: await CardPlan.countDocuments({ status: 'completed' }),
+        totalCards: await CardPlan.aggregate([{ $group: { _id: null, total: { $sum: '$totalCards' } } }])
+      };
+    }
+    
+    res.json({
+      success: true,
+      detail: {
+        config: agent ? {
+          id: agent.id,
+          name: agent.name,
+          role: agent.role,
+          description: agent.description,
+          modelId: agent.modelId,
+          prompt: agent.prompt,
+          temperature: agent.temperature,
+          maxTokens: agent.maxTokens,
+          capabilities: agent.capabilities,
+          enabled: agent.enabled
+        } : null,
+        inputStats,
+        outputStats,
+        currentData: currentData.map(d => ({
+          id: d.id,
+          status: d.status,
+          summary: d.summary || d.tree?.root || d.plans?.[0]?.title || '-',
+          createdAt: d.createdAt
+        }))
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

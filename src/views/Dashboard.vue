@@ -64,7 +64,13 @@
       <div class="flowchart-view">
         <div class="agent-flow">
           <!-- 需求管理节点 -->
-          <div class="flow-node demand-node" @click="goToDemands">
+          <div :class="['flow-node demand-node', { selected: selectedAgentKey === 'demand' }]" 
+               @click="selectAgent('demand')">
+            <div class="node-status">
+              <span class="status-icon" :class="demandStats.total > 0 ? 'success' : 'pending'">
+                {{ demandStats.total > 0 ? '✓' : '○' }}
+              </span>
+            </div>
             <div class="node-header">
               <span class="node-icon">📋</span>
               需求管理
@@ -72,9 +78,8 @@
             <div class="demand-stats">
               <div class="stat-total">{{ demandStats.total }}</div>
               <div class="stat-detail">
-                <span class="pending">●{{ demandStats.pending }}</span>
-                <span class="processing">●{{ demandStats.processing }}</span>
-                <span class="completed">●{{ demandStats.completed }}</span>
+                <span class="pending">待{{ demandStats.pending }}</span>
+                <span class="processing">处理中{{ demandStats.processing }}</span>
               </div>
             </div>
           </div>
@@ -138,36 +143,201 @@
           </div>
 
           <!-- 输出节点 -->
-          <div class="flow-node output-node" :class="{ success: currentExecution?.status === 'success' }">
-            <div class="node-header">输出</div>
-            <div class="node-body">
-              <span v-if="currentExecution?.output">{{ truncate(currentExecution.output, 50) }}</span>
-              <span v-else class="pending">-</span>
+          <div :class="['flow-node output-node', { selected: selectedAgentKey === 'output', success: demandStats.completed > 0 }]" 
+               @click="selectAgent('output')">
+            <div class="node-status">
+              <span class="status-icon" :class="demandStats.completed > 0 ? 'success' : 'pending'">
+                {{ demandStats.completed > 0 ? '✓' : '○' }}
+              </span>
+            </div>
+            <div class="node-header">
+              <span class="node-icon">📤</span>
+              完成输出
+            </div>
+            <div class="demand-stats">
+              <div class="stat-total">{{ demandStats.completed }}</div>
+              <div class="stat-detail">
+                <span class="completed">已完成</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 执行日志 -->
-      <div class="logs-section">
-        <div class="logs-header">
-          <span>
-            执行日志
-            <span v-if="selectedAgentKey" class="log-filter">
-              - {{ pipelineSteps.find(s => s.key === selectedAgentKey)?.name }}
-            </span>
+      <!-- 智能体详情面板 -->
+      <div class="detail-panel" v-if="selectedAgentKey">
+        <div class="detail-header">
+          <span class="detail-title">
+            {{ getAgentDisplayName(selectedAgentKey) }} - 详情
           </span>
-          <span class="logs-count">{{ logs.length }} 条</span>
+          <button class="close-btn" @click="selectedAgentKey = ''">✕</button>
         </div>
-        <div class="logs-content" ref="logsContainer">
-          <div class="log-item" v-for="(log, index) in logs" :key="index" :class="log.level">
-            <span class="log-time">{{ log.time }}</span>
-            <span class="log-level">{{ log.level }}</span>
-            <span class="log-step" v-if="log.stepName">[{{ log.stepName }}]</span>
-            <span class="log-msg">{{ log.message }}</span>
-            <span class="log-duration" v-if="log.duration">{{ log.duration }}ms</span>
+        
+        <!-- Tab切换 -->
+        <div class="detail-tabs">
+          <button :class="['tab-btn', { active: activeTab === 'config' }]" @click="activeTab = 'config'">
+            智能体配置
+          </button>
+          <button :class="['tab-btn', { active: activeTab === 'logs' }]" @click="activeTab = 'logs'">
+            执行日志
+          </button>
+          <button :class="['tab-btn', { active: activeTab === 'data' }]" @click="activeTab = 'data'">
+            数据库信息
+          </button>
+        </div>
+        
+        <!-- Tab内容 -->
+        <div class="tab-content">
+          <!-- 智能体配置 -->
+          <div v-if="activeTab === 'config'" class="tab-pane config-pane">
+            <template v-if="agentDetail.config">
+              <div class="config-item">
+                <label>名称:</label>
+                <span>{{ agentDetail.config.name }}</span>
+              </div>
+              <div class="config-item">
+                <label>角色:</label>
+                <span>{{ agentDetail.config.role }}</span>
+              </div>
+              <div class="config-item">
+                <label>描述:</label>
+                <span>{{ agentDetail.config.description }}</span>
+              </div>
+              <div class="config-item">
+                <label>模型:</label>
+                <span>{{ agentDetail.config.modelId }}</span>
+              </div>
+              <div class="config-item">
+                <label>温度:</label>
+                <span>{{ agentDetail.config.temperature }}</span>
+              </div>
+              <div class="config-item">
+                <label>最大Token:</label>
+                <span>{{ agentDetail.config.maxTokens }}</span>
+              </div>
+              <div class="config-item full">
+                <label>System Prompt:</label>
+                <pre class="prompt-text">{{ agentDetail.config.prompt }}</pre>
+              </div>
+            </template>
+            <template v-else-if="selectedAgentKey === 'demand'">
+              <div class="config-item">
+                <label>数据源:</label>
+                <span>需求管理 (Demand)</span>
+              </div>
+              <div class="config-item">
+                <label>说明:</label>
+                <span>管理所有用户需求，包括新增、编辑、删除和执行</span>
+              </div>
+            </template>
+            <template v-else-if="selectedAgentKey === 'output'">
+              <div class="config-item">
+                <label>输出类型:</label>
+                <span>已完成的需求</span>
+              </div>
+              <div class="config-item">
+                <label>说明:</label>
+                <span>显示所有已完成处理的最终结果</span>
+              </div>
+            </template>
+            <div v-else class="empty-tip">未找到智能体配置</div>
           </div>
-          <div v-if="logs.length === 0" class="logs-empty">暂无日志</div>
+          
+          <!-- 执行日志 -->
+          <div v-if="activeTab === 'logs'" class="tab-pane logs-pane">
+            <div class="logs-content" ref="logsContainer">
+              <div class="log-item" v-for="(log, index) in logs" :key="index" :class="log.level">
+                <span class="log-time">{{ log.time }}</span>
+                <span class="log-level">{{ log.level }}</span>
+                <span class="log-msg">{{ log.message }}</span>
+                <span class="log-duration" v-if="log.duration">{{ log.duration }}ms</span>
+              </div>
+              <div v-if="logs.length === 0" class="empty-tip">暂无日志</div>
+            </div>
+          </div>
+          
+          <!-- 数据库信息 -->
+          <div v-if="activeTab === 'data'" class="tab-pane data-pane">
+            <template v-if="selectedAgentKey === 'demand'">
+              <div class="data-stats">
+                <div class="data-stat-card">
+                  <div class="stat-num">{{ demandStats.total }}</div>
+                  <div class="stat-label">总需求</div>
+                </div>
+                <div class="data-stat-card">
+                  <div class="stat-num pending">{{ demandStats.pending }}</div>
+                  <div class="stat-label">待处理</div>
+                </div>
+                <div class="data-stat-card">
+                  <div class="stat-num processing">{{ demandStats.processing }}</div>
+                  <div class="stat-label">处理中</div>
+                </div>
+                <div class="data-stat-card">
+                  <div class="stat-num completed">{{ demandStats.completed }}</div>
+                  <div class="stat-label">已完成</div>
+                </div>
+              </div>
+            </template>
+            <template v-else-if="agentDetail.inputStats">
+              <div class="data-section">
+                <h4>输入数据统计</h4>
+                <div class="data-stats">
+                  <div class="data-stat-card">
+                    <div class="stat-num">{{ agentDetail.inputStats.total || 0 }}</div>
+                    <div class="stat-label">总数</div>
+                  </div>
+                  <div class="data-stat-card">
+                    <div class="stat-num pending">{{ agentDetail.inputStats.pending || 0 }}</div>
+                    <div class="stat-label">待处理</div>
+                  </div>
+                  <div class="data-stat-card">
+                    <div class="stat-num">{{ agentDetail.inputStats.consumed || 0 }}</div>
+                    <div class="stat-label">已消费</div>
+                  </div>
+                </div>
+              </div>
+              <div class="data-section" v-if="agentDetail.outputStats">
+                <h4>输出数据统计</h4>
+                <div class="data-stats">
+                  <div class="data-stat-card">
+                    <div class="stat-num">{{ agentDetail.outputStats.total || 0 }}</div>
+                    <div class="stat-label">总数</div>
+                  </div>
+                  <div class="data-stat-card">
+                    <div class="stat-num completed">{{ agentDetail.outputStats.completed || 0 }}</div>
+                    <div class="stat-label">已完成</div>
+                  </div>
+                  <div class="data-stat-card" v-if="agentDetail.outputStats.totalCards">
+                    <div class="stat-num">{{ agentDetail.outputStats.totalCards[0]?.total || 0 }}</div>
+                    <div class="stat-label">卡片总数</div>
+                  </div>
+                </div>
+              </div>
+              <div class="data-section" v-if="agentDetail.currentData?.length > 0">
+                <h4>当前待处理数据</h4>
+                <div class="data-list">
+                  <div class="data-item" v-for="item in agentDetail.currentData" :key="item.id">
+                    <span class="item-id">{{ item.id?.slice(0, 12) }}...</span>
+                    <span class="item-status" :class="item.status">{{ item.status }}</span>
+                    <span class="item-summary">{{ item.summary || '-' }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <template v-else-if="selectedAgentKey === 'output'">
+              <div class="data-stats">
+                <div class="data-stat-card">
+                  <div class="stat-num">{{ demandStats.completed }}</div>
+                  <div class="stat-label">已完成需求</div>
+                </div>
+                <div class="data-stat-card">
+                  <div class="stat-num">{{ agentStats.value?.generator?.totalCards || 0 }}</div>
+                  <div class="stat-label">生成卡片</div>
+                </div>
+              </div>
+            </template>
+            <div v-else class="empty-tip">暂无数据</div>
+          </div>
         </div>
       </div>
     </div>
@@ -251,6 +421,8 @@ const agentStats = ref({
 
 // 当前选中的智能体（用于筛选日志）
 const selectedAgentKey = ref('')
+const activeTab = ref('config') // config, logs, data
+const agentDetail = ref({})
 
 let refreshTimer = null
 
@@ -579,12 +751,41 @@ const fetchAgentLogs = async (agentKey) => {
   }
 }
 
-// 选择智能体查看日志
+// 选择智能体查看详情
 const selectAgent = (agentKey) => {
   selectedAgentKey.value = selectedAgentKey.value === agentKey ? '' : agentKey
   if (selectedAgentKey.value) {
+    activeTab.value = 'config'
+    fetchAgentDetail(selectedAgentKey.value)
     fetchAgentLogs(selectedAgentKey.value)
   }
+}
+
+// 获取智能体详情
+const fetchAgentDetail = async (agentKey) => {
+  try {
+    const res = await fetch(`${API_URL}/demands/agents/${agentKey}/detail`)
+    const data = await res.json()
+    if (data.success) {
+      agentDetail.value = data.detail
+    }
+  } catch (err) {
+    console.error('获取智能体详情失败:', err)
+    agentDetail.value = {}
+  }
+}
+
+// 获取显示名称
+const getAgentDisplayName = (key) => {
+  const map = {
+    demand: '需求管理',
+    organizer: '信息整理智能体',
+    architect: '知识树构建智能体',
+    planner: '卡片规划智能体',
+    generator: '卡片生成智能体',
+    output: '完成输出'
+  }
+  return map[key] || key
 }
 
 onMounted(() => {
@@ -599,8 +800,9 @@ onMounted(() => {
     fetchDemandStats()
     fetchAgentStatus()
     fetchAgentStats()
-    // 如果选中了智能体，刷新其日志
+    // 如果选中了智能体，刷新其详情
     if (selectedAgentKey.value) {
+      fetchAgentDetail(selectedAgentKey.value)
       fetchAgentLogs(selectedAgentKey.value)
     }
   }, 3000)
@@ -814,14 +1016,18 @@ onUnmounted(() => {
 }
 
 .flow-node {
-  min-width: 120px;
-  max-width: 160px;
+  width: 140px;
+  min-height: 100px;
   background: white;
   border-radius: 10px;
   padding: 12px;
   position: relative;
   border: 2px solid #e8e8e8;
   transition: all 0.3s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .flow-node.agent-node {
@@ -1272,4 +1478,210 @@ onUnmounted(() => {
 .status-badge.running { background: #e6f7ff; color: #1890ff; }
 .status-badge.failed { background: #fff2f0; color: #ff4d4f; }
 .status-badge.pending { background: #f5f5f5; color: #999; }
+
+/* 详情面板 */
+.detail-panel {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.detail-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Tab切换 */
+.detail-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e8e8e8;
+  margin-bottom: 16px;
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  transition: all 0.3s;
+}
+
+.tab-btn:hover {
+  color: #333;
+}
+
+.tab-btn.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+.tab-content {
+  min-height: 200px;
+}
+
+.tab-pane {
+  animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 配置面板 */
+.config-pane {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.config-item {
+  display: flex;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.config-item.full {
+  width: 100%;
+}
+
+.config-item label {
+  color: #666;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.config-item span {
+  color: #333;
+  font-size: 13px;
+}
+
+.prompt-text {
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  width: 100%;
+  margin: 0;
+}
+
+/* 日志面板 */
+.logs-pane .logs-content {
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* 数据面板 */
+.data-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.data-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.data-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.data-stat-card {
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  min-width: 80px;
+}
+
+.data-stat-card .stat-num {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+}
+
+.data-stat-card .stat-num.pending { color: #fa8c16; }
+.data-stat-card .stat-num.processing { color: #1890ff; }
+.data-stat-card .stat-num.completed { color: #52c41a; }
+
+.data-stat-card .stat-label {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.data-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.data-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.item-id {
+  font-family: monospace;
+  color: #666;
+}
+
+.item-status {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.item-status.completed { background: #f0fff4; color: #52c41a; }
+.item-status.pending { background: #fff7e6; color: #fa8c16; }
+.item-status.running { background: #e6f7ff; color: #1890ff; }
+
+.item-summary {
+  flex: 1;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-tip {
+  text-align: center;
+  color: #999;
+  padding: 40px;
+  font-size: 14px;
+}
+
+/* 选中状态 */
+.flow-node.selected {
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
 </style>
