@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 /**
  * 需求数据模型 - 用户提交的需求/主题
+ * 作为整个智能体流程的入口和追踪点
  */
 const demandSchema = new mongoose.Schema({
   // 需求ID
@@ -51,21 +52,41 @@ const demandSchema = new mongoose.Schema({
     index: true
   },
 
-  // 关联的工作流执行ID
-  workflowExecutionId: {
+  // 当前执行步骤 (0=待开始, 1=信息整理, 2=知识树, 3=卡片规划, 4=卡片生成, 5=完成)
+  currentStep: {
+    type: Number,
+    default: 0
+  },
+
+  // ===== 消费标记（下游智能体使用）=====
+  
+  // 是否已被信息整理智能体处理
+  consumedByKeyPoint: { type: Boolean, default: false },
+  consumedByKeyPointAt: { type: Date },
+
+  // ===== 关联 ID（链接到独立数据表）=====
+  
+  // 关联的关键点
+  keyPointId: {
     type: String,
     default: null
   },
 
-  // 关联的知识树（知识体系）
-  knowledgeTree: {
-    type: mongoose.Schema.Types.Mixed,
+  // 关联的知识树
+  knowledgeTreeId: {
+    type: String,
     default: null
   },
 
   // 关联的卡片规划
-  cardPlan: {
-    type: mongoose.Schema.Types.Mixed,
+  cardPlanId: {
+    type: String,
+    default: null
+  },
+
+  // 关联的工作流执行ID
+  workflowExecutionId: {
+    type: String,
     default: null
   },
 
@@ -109,7 +130,7 @@ const demandSchema = new mongoose.Schema({
 // 索引
 demandSchema.index({ status: 1, createdAt: -1 });
 demandSchema.index({ source: 1 });
-demandSchema.index({ tags: 1 });
+demandSchema.index({ currentStep: 1 });
 
 // 生成需求ID
 demandSchema.statics.generateId = function() {

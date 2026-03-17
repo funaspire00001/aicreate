@@ -80,11 +80,6 @@ const routes = [
     path: '/data',
     name: 'DataManager',
     component: () => import('../views/DataManager.vue')
-  },
-  {
-    path: '/monitor',
-    name: 'Monitor',
-    component: () => import('../views/Monitor.vue')
   }
 ]
 

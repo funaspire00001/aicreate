@@ -1,1173 +1,1105 @@
 <template>
   <div class="dashboard">
-    <div class="dashboard-header">
-      <h1>仪表盘</h1>
-      <div class="backend-status" :class="backendStatus">
-        <span class="status-dot"></span>
-        <span class="status-text">
-          {{ backendStatus === 'connected' ? '后端已连接' : backendStatus === 'disconnected' ? '后端未连接' : '检测中...' }}
-        </span>
-        <span v-if="backendInfo.uptimeFormatted" class="status-uptime">运行 {{ backendInfo.uptimeFormatted }}</span>
+    <!-- 上方：状态信息区 -->
+    <div class="status-section">
+      <div class="section-header">
+        <h1>仪表盘</h1>
+        <div class="backend-status" :class="backendStatus">
+          <span class="status-dot"></span>
+          <span class="status-text">
+            {{ backendStatus === 'connected' ? '后端已连接' : backendStatus === 'disconnected' ? '后端未连接' : '检测中...' }}
+          </span>
+        </div>
+      </div>
+      <div class="stats-bar">
+        <div class="stat-item">
+          <span class="stat-value">{{ demandStats.total }}</span>
+          <span class="stat-label">需求总数</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value pending">{{ demandStats.pending }}</span>
+          <span class="stat-label">待处理</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ stats.knowledge?.total || 0 }}</span>
+          <span class="stat-label">知识点</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">{{ stats.today?.cards || 0 }}</span>
+          <span class="stat-label">今日卡片</span>
+        </div>
+      </div>
+      <!-- 最近活动 -->
+      <div class="recent-activities" v-if="stats.recentRequests?.length > 0">
+        <div class="activity-item" v-for="req in stats.recentRequests.slice(0, 3)" :key="req.id">
+          <span class="activity-time">{{ formatTime(req.createdAt) }}</span>
+          <span class="activity-content">{{ req.requirement }}</span>
+          <span :class="['activity-status', req.status]">{{ req.status }}</span>
+        </div>
       </div>
     </div>
-    
-    <!-- 左右布局 -->
-    <div class="dashboard-layout">
-      
-      <!-- 左侧：创作和日志 -->
-      <div class="left-panel">
-        
-        <!-- 创作输入框 -->
-        <div class="create-section">
-          <div class="create-input-wrapper">
-            <input 
-              v-model="createTheme"
-              type="text" 
-              placeholder="输入卡片主题，如：12星座运势、10个冷笑话、新春祝福..."
-              @keyup.enter="handleCreate"
-              :disabled="creating"
-            />
-            <button @click="handleCreate" :disabled="creating || !createTheme.trim()">
-              {{ creating ? '生成中...' : '创作' }}
-            </button>
-          </div>
-          <div class="style-options">
-            <label>工作流：</label>
-            <select v-model="selectedWorkflowId" :disabled="creating">
-              <option v-for="wf in availableWorkflows" :key="wf.id" :value="wf.id">
-                {{ wf.name }}
-              </option>
-            </select>
-            <label>保存：</label>
-            <select v-model="autoPublish">
-              <option :value="false">保存到本地</option>
-              <option :value="true">自动发布</option>
-            </select>
-            <label>风格：</label>
-            <select v-model="createStyle">
-              <option value="">默认</option>
-              <option value="简约清新">简约清新</option>
-              <option value="可爱卡通">可爱卡通</option>
-              <option value="商务硬朗">商务硬朗</option>
-              <option value="温馨浪漫">温馨浪漫</option>
-              <option value="文艺复古">文艺复古</option>
-            </select>
-          </div>
-          
-          <!-- 生成结果 -->
-          <div class="create-result" v-if="createResult">
-            <div class="result-header">
-              <span class="result-theme">{{ createResult.theme }}</span>
-              <span class="result-status success">生成成功</span>
-              <span :class="['result-badge', createResult.status]">
-                {{ createResult.status === 'published' ? '已发布' : '本地保存' }}
-              </span>
+
+    <!-- 下方：工作流监控区 -->
+    <div class="workflow-section">
+      <div class="section-header">
+        <h2>工作流执行监控</h2>
+        <div class="workflow-controls">
+          <select v-model="selectedWorkflowId" class="workflow-select" @change="onWorkflowChange">
+            <option value="">选择工作流</option>
+            <option v-for="wf in workflows" :key="wf.id" :value="wf.id">{{ wf.name }}</option>
+          </select>
+          <button @click="autoRun" class="run-btn" :disabled="isRunning" :class="{ running: isRunning }">
+            {{ isRunning ? '运行中...' : '开始运行' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="exec-info" v-if="currentExecution">
+        <span class="exec-id">ID: {{ currentExecution.id?.slice(0, 8) }}</span>
+        <span class="exec-time">{{ formatTime(currentExecution.startTime) }}</span>
+        <span :class="['exec-status', currentExecution.status]">{{ getStatusText(currentExecution.status) }}</span>
+      </div>
+
+      <!-- 流程图视图 -->
+      <div class="flowchart-view">
+        <div class="agent-flow">
+          <!-- 需求管理节点 -->
+          <div class="flow-node demand-node" @click="goToDemands">
+            <div class="node-header">
+              <span class="node-icon">📋</span>
+              需求管理
             </div>
-            <div class="result-info">
-              卡片ID: {{ createResult.cardId }} | 耗时: {{ createResult.totalDuration }}ms
-              <span v-if="createResult.publishedCardId"> | 云端ID: {{ createResult.publishedCardId }}</span>
+            <div class="demand-stats">
+              <div class="stat-total">{{ demandStats.total }}</div>
+              <div class="stat-detail">
+                <span class="pending">●{{ demandStats.pending }}</span>
+                <span class="processing">●{{ demandStats.processing }}</span>
+                <span class="completed">●{{ demandStats.completed }}</span>
+              </div>
+            </div>
+          </div>
+
+          <template v-for="(step, index) in pipelineSteps" :key="index">
+            <!-- 箭头 -->
+            <div class="flow-arrow">
+              <svg width="40" height="24" viewBox="0 0 40 24">
+                <line x1="0" y1="12" x2="30" y2="12" stroke="#d9d9d9" stroke-width="2"/>
+                <polygon points="30,6 40,12 30,18" :fill="getArrowColor(step, index)"/>
+              </svg>
             </div>
             
-            <!-- 步骤详情 -->
-            <div class="steps-detail" v-if="createResult.steps && createResult.steps.length > 0">
-              <div class="steps-title">生成步骤</div>
-              <div class="step-item" v-for="step in createResult.steps" :key="step.step" :class="{ success: step.success, failed: !step.success }">
-                <div class="step-header">
-                  <span class="step-num">步骤{{ step.step }}</span>
-                  <span class="step-name">{{ step.name }}</span>
-                  <span class="step-duration">{{ step.duration }}ms</span>
-                  <span class="step-status">{{ step.success ? '✓' : '✗' }}</span>
-                </div>
-                <div class="step-io" v-if="step.input || step.output">
-                  <div class="step-input" v-if="step.input">
-                    <div class="io-label">输入：</div>
-                    <pre>{{ typeof step.input === 'object' ? JSON.stringify(step.input, null, 2) : step.input }}</pre>
-                  </div>
-                  <div class="step-output" v-if="step.output">
-                    <div class="io-label">输出：</div>
-                    <pre>{{ JSON.stringify(step.output, null, 2) }}</pre>
-                  </div>
-                </div>
+            <!-- 智能体节点 -->
+            <div :class="['flow-node', 'agent-node', step.status, { selected: selectedAgentKey === step.key }]" 
+                 @click="selectAgent(step.key)">
+              <div class="node-status">
+                <span v-if="step.status === 'success'" class="status-icon success">✓</span>
+                <span v-else-if="step.status === 'running'" class="status-icon running">
+                  <span class="spinner"></span>
+                </span>
+                <span v-else-if="step.status === 'failed'" class="status-icon failed">✗</span>
+                <span v-else class="status-icon pending">○</span>
+              </div>
+              
+              <div class="node-header">
+                <span class="step-num">{{ index + 1 }}</span>
+                {{ step.name }}
+              </div>
+              
+              <div class="node-agent">{{ step.agentName }}</div>
+              
+              <!-- 数据统计 -->
+              <div class="node-stats">
+                <span class="stat" v-if="step.stats?.total !== undefined">
+                  总计: {{ step.stats.total }}
+                </span>
+                <span class="stat pending" v-if="step.stats?.unconsumed">
+                  待处理: {{ step.stats.unconsumed }}
+                </span>
+                <span class="stat" v-if="step.stats?.totalCards">
+                  卡片: {{ step.stats.totalCards }}
+                </span>
+              </div>
+              
+              <div class="node-current" v-if="step.currentTask && step.status === 'running'">
+                {{ step.currentTask }}
+              </div>
+              <div class="node-error" v-if="step.status === 'failed'">
+                执行失败
               </div>
             </div>
+          </template>
+
+          <!-- 最终箭头 -->
+          <div class="flow-arrow">
+            <svg width="40" height="24" viewBox="0 0 40 24">
+              <line x1="0" y1="12" x2="30" y2="12" stroke="#d9d9d9" stroke-width="2"/>
+              <polygon points="30,6 40,12 30,18" :fill="currentExecution?.status === 'success' ? '#52c41a' : '#d9d9d9'"/>
+            </svg>
           </div>
-          <div class="create-error" v-if="createError">
-            {{ createError }}
+
+          <!-- 输出节点 -->
+          <div class="flow-node output-node" :class="{ success: currentExecution?.status === 'success' }">
+            <div class="node-header">输出</div>
+            <div class="node-body">
+              <span v-if="currentExecution?.output">{{ truncate(currentExecution.output, 50) }}</span>
+              <span v-else class="pending">-</span>
+            </div>
           </div>
         </div>
-        
-        <!-- 实时状态 -->
-        <div class="processing-status" :class="{ active: processingStatus.isProcessing }">
-          <div class="status-header">
-            <div class="status-indicator" :class="{ running: processingStatus.isProcessing }"></div>
-            <span class="status-text">
-              {{ processingStatus.isProcessing ? '正在处理中...' : '待机中' }}
+      </div>
+
+      <!-- 执行日志 -->
+      <div class="logs-section">
+        <div class="logs-header">
+          <span>
+            执行日志
+            <span v-if="selectedAgentKey" class="log-filter">
+              - {{ pipelineSteps.find(s => s.key === selectedAgentKey)?.name }}
             </span>
-          </div>
-          <div class="status-content">
-            <div class="status-item">
-              <span class="label">待处理</span>
-              <span class="value pending-count">{{ processingStatus.totalPending }}</span>
-            </div>
-            <div class="status-item">
-              <span class="label">已处理</span>
-              <span class="value">{{ processingStatus.processedCount }}</span>
-            </div>
-          </div>
+          </span>
+          <span class="logs-count">{{ logs.length }} 条</span>
         </div>
-        
-        <!-- 处理日志 -->
-        <div class="logs-section">
-          <div class="logs-header">
-            <span>{{ generatingStatus }}</span>
-            <span class="logs-count">{{ filteredLogs.length }} 条</span>
+        <div class="logs-content" ref="logsContainer">
+          <div class="log-item" v-for="(log, index) in logs" :key="index" :class="log.level">
+            <span class="log-time">{{ log.time }}</span>
+            <span class="log-level">{{ log.level }}</span>
+            <span class="log-step" v-if="log.stepName">[{{ log.stepName }}]</span>
+            <span class="log-msg">{{ log.message }}</span>
+            <span class="log-duration" v-if="log.duration">{{ log.duration }}ms</span>
           </div>
-          <div class="logs-content">
-            <div class="log-item" v-for="(log, index) in filteredLogs.slice(-50).reverse()" :key="index" :class="log.type">
-              <span class="log-time">{{ log.time }}</span>
-              <span class="log-type" v-if="log.type">{{ log.type }}</span>
-              <span class="log-msg">{{ log.message || log }}</span>
-              <!-- 步骤结果详情 -->
-              <div v-if="log.stepOutput" class="log-step-output">
-                <pre>{{ formatStepOutput(log.stepOutput) }}</pre>
-              </div>
-            </div>
-            <div v-if="filteredLogs.length === 0" class="logs-empty">
-              暂无日志
-            </div>
-          </div>
+          <div v-if="logs.length === 0" class="logs-empty">暂无日志</div>
         </div>
-        
       </div>
-      
-      <!-- 右侧：统计 -->
-      <div class="right-panel">
-        
-        <!-- 统计卡片 -->
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-value">{{ stats.today.requests }}</div>
-            <div class="stat-label">今日需求</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ processingStatus.stats?.totalGenerated || 0 }}</div>
-            <div class="stat-label">生成卡片</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ stats.knowledge.total }}</div>
-            <div class="stat-label">知识点数</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ processingStatus.stats?.todaySuccess || 0 }}</div>
-            <div class="stat-label">今日成功</div>
-          </div>
-        </div>
+    </div>
 
-        <!-- 最近需求 -->
-        <div class="section">
-          <h2>最近需求</h2>
-          <div class="table-container">
-            <table v-if="stats.recentRequests.length > 0">
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>需求</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="req in stats.recentRequests" :key="req.id">
-                  <td>{{ formatTime(req.createdAt) }}</td>
-                  <td>{{ req.requirement }}</td>
-                  <td>
-                    <span :class="['status', req.status]">{{ req.status }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <div v-else class="empty">暂无数据</div>
+    <!-- 步骤详情弹窗 -->
+    <div v-if="showDetail" class="modal-overlay" @click.self="showDetail = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{{ currentStep.name }} - 详情</h2>
+          <button class="close-btn" @click="showDetail = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-row">
+            <label>状态</label>
+            <span :class="['status-badge', currentStep.status]">{{ getStatusText(currentStep.status) }}</span>
+          </div>
+          <div class="detail-row" v-if="currentStep.detailStatus">
+            <label>详情</label>
+            <span>{{ currentStep.detailStatus }}</span>
+          </div>
+          <div class="detail-row" v-if="currentStep.duration">
+            <label>耗时</label>
+            <span>{{ currentStep.duration }}ms</span>
+          </div>
+          <div class="detail-section" v-if="currentStep.input">
+            <label>输入</label>
+            <pre class="code-block">{{ currentStep.input }}</pre>
+          </div>
+          <div class="detail-section" v-if="currentStep.output">
+            <label>输出</label>
+            <pre class="code-block">{{ formatJson(currentStep.output) }}</pre>
+          </div>
+          <div class="detail-section error" v-if="currentStep.error">
+            <label>错误信息</label>
+            <div class="error-text">{{ currentStep.error }}</div>
           </div>
         </div>
-
-        <!-- 热门知识点 -->
-        <div class="section">
-          <h2>热门知识点</h2>
-          <div class="knowledge-list" v-if="stats.hotKnowledge.length > 0">
-            <div class="knowledge-item" v-for="item in stats.hotKnowledge" :key="item.id">
-              <span class="subject">{{ item.subject }}</span>
-              <span class="topic">{{ item.topic }}</span>
-              <span class="count">使用 {{ item.usageCount }} 次</span>
-            </div>
-          </div>
-          <div v-else class="empty">暂无数据</div>
-        </div>
-        
       </div>
-      
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { dashboardApi, statusApi } from '../api'
 
-// 后端状态
-const backendStatus = ref('checking') // 'checking' | 'connected' | 'disconnected'
-const backendInfo = ref({
-  uptimeFormatted: '',
-  memory: null
-})
+const API_URL = 'http://localhost:3001/api'
 
-const stats = ref({
-  today: { requests: 0, cards: 0, knowledgeUsed: 0 },
-  knowledge: { total: 0 },
-  weeklyTrend: [],
-  agentStats: [],
-  recentRequests: [],
-  hotKnowledge: []
-})
-
-const processingStatus = ref({
-  isProcessing: false,
-  currentFeedback: null,
-  currentStep: '',
-  totalPending: 0,
-  processedCount: 0,
-  lastUpdateTime: null,
-  logs: [],
-  stats: {
-    todayTotal: 0,
-    todaySuccess: 0,
-    todayFailed: 0,
-    totalGenerated: 0,
-    lastError: null
-  }
-})
-
-const loading = ref(false)
-const error = ref(null)
-const showLogs = ref(false)
-const clientLogs = ref([])  // 客户端生成的日志
-  
-// 过滤空的日志
-const filteredLogs = computed(() => {
-  // 合并服务端日志和客户端日志
-  const serverLogs = processingStatus.value.logs || []
-  const allLogs = [...serverLogs, ...clientLogs.value]
-  
-  return allLogs.filter(log => {
-    // 过滤掉空内容和没有意义的日志
-      const msg = log.message || log
-      return msg && typeof msg === 'string' && msg.trim() && !msg.includes('没有待处理的反馈')  })
-})
-
-// 创作相关
-const createTheme = ref('')
-const createStyle = ref('')
+// 状态
+const backendStatus = ref('checking')
+const workflows = ref([])
 const selectedWorkflowId = ref('')
-const availableWorkflows = ref([])
-const autoPublish = ref(false)  // 默认保存到本地
-const creating = ref(false)
-const createResult = ref(null)
-const createError = ref(null)
-const generatingStatus = ref('处理日志')  // 日志标题状态
-const currentGeneratingTheme = ref('')  // 当前正在生成的主题
+const currentExecution = ref(null)
+const showDetail = ref(false)
+const currentStep = ref({})
+const demandStats = ref({ total: 0, pending: 0, processing: 0, completed: 0 })
+const isRunning = ref(false)
+const logs = ref([])
+const logsContainer = ref(null)
+const stats = ref({
+  today: { requests: 0, cards: 0 },
+  knowledge: { total: 0 },
+  recentRequests: []
+})
 
-let refreshInterval = null
-let statusInterval = null
-let healthInterval = null
+// 智能体独立状态
+const agentStatus = ref({
+  organizer: { status: 'idle', currentTask: null, lastRun: null },
+  architect: { status: 'idle', currentTask: null, lastRun: null },
+  planner: { status: 'idle', currentTask: null, lastRun: null },
+  generator: { status: 'idle', currentTask: null, lastRun: null }
+})
 
-const formatTime = (time) => {
-  if (!time) return '-'
-  return new Date(time).toLocaleString('zh-CN')
-}
+// 智能体数据统计
+const agentStats = ref({
+  organizer: { total: 0, completed: 0, unconsumed: 0 },
+  architect: { total: 0, completed: 0, unconsumed: 0 },
+  planner: { total: 0, completed: 0, unconsumed: 0, totalCards: 0 },
+  generator: { totalCards: 0, pending: 0 }
+})
 
-const getStepText = (step) => {
-  const stepMap = {
-    'idle': '空闲',
-    'fetching': '获取需求',
-    'generating': '生成卡片',
-    'publishing': '发布卡片',
-    'updating': '更新状态',
-    'error': '处理出错',
-    'stopped': '已停止'
-  }
-  return stepMap[step] || step
-}
+// 当前选中的智能体（用于筛选日志）
+const selectedAgentKey = ref('')
 
-const fetchDashboard = async () => {
-  loading.value = true
-  error.value = null
+let refreshTimer = null
+
+// 流水线步骤 - 基于智能体实时状态和统计数据
+const pipelineSteps = computed(() => {
+  const agents = [
+    { key: 'organizer', name: '信息整理', agentName: '信息整理智能体', dataLabel: '关键点' },
+    { key: 'architect', name: '知识树构建', agentName: '知识树构建智能体', dataLabel: '知识树' },
+    { key: 'planner', name: '卡片规划', agentName: '卡片规划智能体', dataLabel: '规划' },
+    { key: 'generator', name: '卡片生成', agentName: '卡片生成智能体', dataLabel: '卡片' }
+  ]
   
+  return agents.map(agent => {
+    const status = agentStatus.value[agent.key]
+    const stats = agentStats.value[agent.key]
+    const stepStatus = status.status === 'running' ? 'running' :
+                       status.status === 'failed' ? 'failed' :
+                       status.status === 'idle' && status.lastRun ? 'success' : 'pending'
+    
+    return {
+      ...agent,
+      status: stepStatus,
+      currentTask: status.currentTask,
+      lastRun: status.lastRun,
+      stats: stats
+    }
+  })
+})
+
+const getArrowColor = (step, index) => {
+  if (step.status === 'success' || step.status === 'running') return '#667eea'
+  if (index > 0) {
+    const prevStep = pipelineSteps.value[index - 1]
+    if (prevStep.status === 'success') return '#667eea'
+  }
+  return '#d9d9d9'
+}
+
+// 添加日志
+const addLog = (level, message, data = {}) => {
+  const now = new Date()
+  logs.value.push({
+    time: now.toTimeString().slice(0, 8),
+    level: level.toUpperCase(),
+    message,
+    ...data
+  })
+  // 滚动到底部
+  nextTick(() => {
+    if (logsContainer.value) {
+      logsContainer.value.scrollTop = logsContainer.value.scrollHeight
+    }
+  })
+}
+
+// 自动运行：启动需求处理
+const autoRun = async () => {
+  if (!selectedWorkflowId.value || isRunning.value) return
+  
+  try {
+    isRunning.value = true
+    addLog('info', '查找可执行的需求...')
+    
+    // 获取待处理需求
+    let res = await fetch(`${API_URL}/demands?status=pending&limit=1`)
+    let data = await res.json()
+    
+    if (!data.success || data.demands.length === 0) {
+      res = await fetch(`${API_URL}/demands?status=failed&limit=1`)
+      data = await res.json()
+    }
+    
+    if (!data.success || data.demands.length === 0) {
+      res = await fetch(`${API_URL}/demands?status=processing&limit=1`)
+      data = await res.json()
+      
+      if (data.success && data.demands.length > 0) {
+        addLog('info', `已有正在处理的需求: ${data.demands[0].theme}`)
+        currentExecution.value = data.demands[0]
+        fetchExecutionLogs(data.demands[0].id)
+        return
+      }
+    }
+    
+    if (!data.success || data.demands.length === 0) {
+      addLog('warn', '没有可执行的需求')
+      return
+    }
+    
+    const demand = data.demands[0]
+    addLog('info', `启动需求处理: ${demand.theme}`)
+    
+    // 调用启动API（调度器会自动接管）
+    res = await fetch(`${API_URL}/demands/${demand.id}/start`, {
+      method: 'POST'
+    })
+    data = await res.json()
+    
+    if (data.success) {
+      addLog('info', '需求已启动，调度器将自动处理')
+      currentExecution.value = data.demand
+      fetchDemandStats()
+    } else {
+      addLog('error', data.error || '启动失败')
+    }
+  } catch (err) {
+    addLog('error', `启动失败: ${err.message}`)
+  } finally {
+    isRunning.value = false
+  }
+}
+
+const fetchWorkflows = async () => {
+  try {
+    const res = await fetch(`${API_URL}/workflows`)
+    const data = await res.json()
+    if (data.success) {
+      workflows.value = data.workflows
+      if (workflows.value.length > 0 && !selectedWorkflowId.value) {
+        selectedWorkflowId.value = workflows.value[0].id
+        fetchCurrentExecution()
+      }
+    }
+  } catch (err) {
+    console.error('获取工作流失败:', err)
+  }
+}
+
+const fetchCurrentExecution = async () => {
+  if (!selectedWorkflowId.value) return
+  
+  try {
+    let res = await fetch(`${API_URL}/workflows/executions/running`)
+    let data = await res.json()
+    
+    if (data.success && data.executions.length > 0) {
+      const exec = data.executions[0]
+      const wf = workflows.value.find(w => w.id === selectedWorkflowId.value)
+      currentExecution.value = { ...exec, workflowSteps: wf?.steps || [] }
+      return
+    }
+    
+    res = await fetch(`${API_URL}/workflows/${selectedWorkflowId.value}/executions?limit=1`)
+    data = await res.json()
+    
+    if (data.success && data.executions.length > 0) {
+      const exec = data.executions[0]
+      const wf = workflows.value.find(w => w.id === selectedWorkflowId.value)
+      currentExecution.value = { ...exec, workflowSteps: wf?.steps || [] }
+    }
+  } catch (err) {
+    console.error('获取执行记录失败:', err)
+  }
+}
+
+const fetchDemandStats = async () => {
+  try {
+    const res = await fetch(`${API_URL}/demands/stats/overview`)
+    const data = await res.json()
+    if (data.success) {
+      demandStats.value = data.stats
+    }
+  } catch (err) {
+    console.error('获取需求统计失败:', err)
+  }
+}
+
+const fetchDashboardStats = async () => {
   try {
     const data = await dashboardApi.get()
     if (data.success) {
       stats.value = data.data
     }
   } catch (err) {
-    console.error('获取仪表盘数据失败:', err)
-    error.value = err.message
-  } finally {
-    loading.value = false
+    console.error('获取统计数据失败:', err)
   }
 }
 
-const fetchProcessingStatus = async () => {
-  try {
-    const data = await statusApi.scheduler()
-    if (data.success) {
-      processingStatus.value = data.data
-    }
-  } catch (err) {
-    console.error('获取处理状态失败:', err)
-  }
-}
-
-// 格式化步骤输出
-const formatStepOutput = (output) => {
-  if (!output) return ''
-  if (typeof output === 'string') return output
-  try {
-    return JSON.stringify(output, null, 2)
-  } catch (e) {
-    return String(output)
-  }
-}
-
-// 添加日志
-const addLogEntry = (type, message, stepOutput = null) => {
-  const now = new Date()
-  const time = now.toTimeString().slice(0, 8)
-  clientLogs.value.push({ type, message, time, stepOutput })
-}
-
-// 获取可用工作流列表
-const fetchWorkflows = async () => {
-  try {
-    const response = await fetch('http://localhost:3001/api/workflows')
-    const data = await response.json()
-    if (data.success) {
-      availableWorkflows.value = data.workflows.filter(w => w.enabled)
-      // 默认选择第一个工作流
-      if (availableWorkflows.value.length > 0 && !selectedWorkflowId.value) {
-        selectedWorkflowId.value = availableWorkflows.value[0].id
-      }
-    }
-  } catch (err) {
-    console.error('获取工作流列表失败:', err)
-  }
-}
-
-// 创作卡片（使用工作流引擎）
-const handleCreate = async () => {
-  if (!createTheme.value.trim() || creating.value) return
-  if (!selectedWorkflowId.value) {
-    addLogEntry('error', '请先选择一个工作流')
-    return
-  }
-  
-  creating.value = true
-  createError.value = null
-  createResult.value = null
-  currentGeneratingTheme.value = createTheme.value.trim()
-  generatingStatus.value = `生成中，需求：${currentGeneratingTheme.value}`
-  
-  const theme = createTheme.value.trim()
-  const workflowId = selectedWorkflowId.value
-  
-  try {
-    // 使用 SSE 方式调用工作流执行 API
-    const response = await fetch(`http://localhost:3001/api/workflows/${workflowId}/run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        input: {
-          theme,
-          style: createStyle.value,
-          autoPublish: autoPublish.value
-        },
-        stream: true  // 启用 SSE
-      })
-    })
-    
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      
-      buffer += decoder.decode(value, { stream: true })
-      
-      // 解析 SSE 事件
-      const lines = buffer.split('\n\n')
-      buffer = lines.pop() || ''
-      
-      for (const line of lines) {
-        if (!line.trim()) continue
-        
-        const eventMatch = line.match(/^event: (.+)$/m)
-        const dataMatch = line.match(/^data: (.+)$/m)
-        
-        if (eventMatch && dataMatch) {
-          const event = eventMatch[1]
-          const data = JSON.parse(dataMatch[1])
-          
-          switch (event) {
-            case 'start':
-              addLogEntry('info', `开始执行工作流: ${data.workflowName || workflowId}`)
-              break
-              
-            case 'step_start':
-              addLogEntry('info', `步骤 ${data.stepIndex + 1}/${data.totalSteps}: ${data.stepName}`)
-              generatingStatus.value = `生成中，需求：${currentGeneratingTheme.value} - ${data.stepName}`
-              break
-              
-            case 'step_complete':
-              const stepMsg = `步骤 ${data.stepIndex + 1} ${data.stepName} 完成 (${data.duration}ms)`
-              addLogEntry(data.success ? 'success' : 'error', stepMsg, data.output)
-              break
-              
-            case 'saved':
-              addLogEntry('info', `卡片已保存到本地: ${data.cardId}`)
-              break
-              
-            case 'publishing':
-              addLogEntry('info', data.message)
-              generatingStatus.value = `发布中，需求：${currentGeneratingTheme.value}`
-              break
-              
-            case 'published':
-              addLogEntry('success', `已发布到云端: ${data.cardName}`)
-              break
-              
-            case 'complete':
-              createResult.value = data
-              createTheme.value = ''
-              generatingStatus.value = '处理日志'
-              currentGeneratingTheme.value = ''
-              addLogEntry('success', `工作流执行完成！总耗时: ${data.totalDuration}ms`)
-              fetchDashboard()
-              break
-              
-            case 'error':
-              createError.value = data.error
-              generatingStatus.value = '处理日志'
-              currentGeneratingTheme.value = ''
-              addLogEntry('error', `错误: ${data.error}`)
-              break
-          }
-        }
-      }
-    }
-    
-  } catch (err) {
-    console.error('创作卡片失败:', err)
-    createError.value = err.message || '创作失败，请重试'
-    generatingStatus.value = '处理日志'
-    currentGeneratingTheme.value = ''
-    addLogEntry('error', `创作失败: ${err.message}`)
-  } finally {
-    creating.value = false
-  }
-}
-
-onMounted(() => {
-  fetchDashboard()
-  fetchWorkflows()
-  fetchProcessingStatus()
-  checkBackendHealth()
-  
-  // 每30秒刷新仪表盘
-  refreshInterval = setInterval(fetchDashboard, 30000)
-  // 每3秒刷新处理状态
-  statusInterval = setInterval(fetchProcessingStatus, 3000)
-  // 每10秒检测后端状态
-  healthInterval = setInterval(checkBackendHealth, 10000)
-})
-
-onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
-  if (statusInterval) {
-    clearInterval(statusInterval)
-  }
-  if (healthInterval) {
-    clearInterval(healthInterval)
-  }
-})
-
-// 检测后端健康状态
-async function checkBackendHealth() {
+const checkBackendHealth = async () => {
   try {
     const response = await statusApi.health()
-    if (response.success) {
-      backendStatus.value = 'connected'
-      backendInfo.value = response.data
-    } else {
-      backendStatus.value = 'disconnected'
-    }
+    backendStatus.value = response.success ? 'connected' : 'disconnected'
   } catch (err) {
     backendStatus.value = 'disconnected'
   }
 }
+
+// 获取需求执行日志
+const fetchExecutionLogs = async (demandId) => {
+  if (!demandId) return
+  
+  try {
+    const res = await fetch(`${API_URL}/demands/${demandId}/execution`)
+    const data = await res.json()
+    if (data.success && data.execution) {
+      // 更新当前执行状态
+      currentExecution.value = data.execution.demand
+      
+      // 更新日志
+      if (data.execution.logs) {
+        logs.value = data.execution.logs.map(log => ({
+          time: new Date(log.createdAt).toTimeString().slice(0, 8),
+          level: log.level,
+          message: log.message,
+          stepName: log.stepName,
+          duration: log.duration
+        }))
+      }
+    }
+  } catch (err) {
+    console.error('获取执行详情失败:', err)
+  }
+}
+
+const fetchLogs = async () => {
+  if (!currentExecution.value?.id) return
+  
+  try {
+    const res = await fetch(`${API_URL}/workflows/execution/${currentExecution.value.id}/logs`)
+    const data = await res.json()
+    if (data.success && data.logs) {
+      logs.value = data.logs.map(log => ({
+        time: new Date(log.timestamp).toTimeString().slice(0, 8),
+        level: log.level,
+        message: log.message,
+        stepName: log.stepName,
+        duration: log.duration
+      }))
+    }
+  } catch (err) {
+    console.error('获取日志失败:', err)
+  }
+}
+
+const onWorkflowChange = () => {
+  currentExecution.value = null
+  logs.value = []
+  fetchCurrentExecution()
+}
+
+const goToDemands = () => {
+  window.location.href = '/demands'
+}
+
+const showStepDetail = (step, index) => {
+  if (step.status === 'pending') return
+  currentStep.value = step
+  showDetail.value = true
+}
+
+const truncate = (str, maxLen = 80) => {
+  if (!str) return ''
+  str = typeof str === 'object' ? JSON.stringify(str) : String(str)
+  return str.length > maxLen ? str.slice(0, maxLen) + '...' : str
+}
+
+const truncateOutput = (output) => {
+  if (!output) return ''
+  let str = typeof output === 'object' ? JSON.stringify(output) : String(output)
+  if (str.length > 50) return str.slice(0, 50) + '...'
+  return str
+}
+
+const formatJson = (data) => {
+  if (!data) return '-'
+  if (typeof data === 'object') return JSON.stringify(data, null, 2)
+  try {
+    return JSON.stringify(JSON.parse(data), null, 2)
+  } catch {
+    return data
+  }
+}
+
+const formatTime = (time) => {
+  if (!time) return '-'
+  return new Date(time).toLocaleTimeString('zh-CN')
+}
+
+const getStatusText = (status) => {
+  const map = { pending: '等待中', running: '执行中', success: '已完成', failed: '失败', idle: '空闲' }
+  return map[status] || status
+}
+
+// 获取智能体状态
+const fetchAgentStatus = async () => {
+  try {
+    const res = await fetch(`${API_URL}/demands/agents/status`)
+    const data = await res.json()
+    if (data.success) {
+      agentStatus.value = data.agents
+    }
+  } catch (err) {
+    console.error('获取智能体状态失败:', err)
+  }
+}
+
+// 获取智能体数据统计
+const fetchAgentStats = async () => {
+  try {
+    const res = await fetch(`${API_URL}/demands/agents/stats`)
+    const data = await res.json()
+    if (data.success) {
+      agentStats.value = data.stats
+    }
+  } catch (err) {
+    console.error('获取智能体统计失败:', err)
+  }
+}
+
+// 获取指定智能体的日志
+const fetchAgentLogs = async (agentKey) => {
+  try {
+    const res = await fetch(`${API_URL}/demands/agents/${agentKey}/logs?limit=20`)
+    const data = await res.json()
+    if (data.success) {
+      logs.value = data.logs.map(log => ({
+        time: new Date(log.createdAt).toTimeString().slice(0, 8),
+        level: log.level,
+        message: log.message,
+        stepName: log.agentName,
+        duration: log.duration
+      }))
+    }
+  } catch (err) {
+    console.error('获取智能体日志失败:', err)
+  }
+}
+
+// 选择智能体查看日志
+const selectAgent = (agentKey) => {
+  selectedAgentKey.value = selectedAgentKey.value === agentKey ? '' : agentKey
+  if (selectedAgentKey.value) {
+    fetchAgentLogs(selectedAgentKey.value)
+  }
+}
+
+onMounted(() => {
+  checkBackendHealth()
+  fetchWorkflows()
+  fetchDemandStats()
+  fetchDashboardStats()
+  fetchAgentStatus()
+  fetchAgentStats()
+  
+  refreshTimer = setInterval(() => {
+    fetchDemandStats()
+    fetchAgentStatus()
+    fetchAgentStats()
+    // 如果选中了智能体，刷新其日志
+    if (selectedAgentKey.value) {
+      fetchAgentLogs(selectedAgentKey.value)
+    }
+  }, 3000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+})
 </script>
 
 <style scoped>
 .dashboard {
-  padding: 0;
-  max-width: 100%;
-  margin: 0;
+  padding: 20px;
 }
 
-h1 {
-  margin-bottom: 24px;
-  color: #333;
-  padding: 0 20px;
+/* 状态信息区 */
+.status-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 
-.dashboard-header {
+.section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
-.backend-status{
+.section-header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.backend-status {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 14px;
-  background: #f0f0f0;
-  color: #666;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  background: #f5f5f5;
+  color: #999;
 }
 
-.backend-status.connected{
+.backend-status.connected {
   background: #f6ffed;
   color: #52c41a;
-  border: 1px solid #b7eb8f;
 }
 
-.backend-status.disconnected{
-  background: #fff1f0;
-  color: #f5222d;
-  border: 1px solid #ffccc7;
-}
-
-.backend-status.checking{
-  background: #f0f0f0;
-  color: #999;
-  border: 1px solid #d9d9d9;
-}
-
-.status-dot{
-  width: 8px;
-  height: 8px;
+.backend-status .status-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
 }
 
-.backend-status.connected .status-dot{
-  background: #52c41a;
-  animation: pulse 2s infinite;
-}
-
-.backend-status.disconnected .status-dot{
-  background: #f5222d;
-}
-
-@keyframes pulse{
-  0% { opacity: 1; }
-  50% { opacity: 0.5; }
-  100% { opacity: 1; }
-}
-
-.status-uptime{
-  font-size: 12px;
-  color: #999;
-  margin-left: 8px;
-}
-
-/* 左右布局 */
-.dashboard-layout {
+.stats-bar {
   display: flex;
-  gap: 24px;
-  align-items: flex-start;
-  padding: 0 20px;
-}
-
-.left-panel {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.right-panel {
-  width: 380px;
-  flex-shrink: 0;
-}
-
-/* 创作区域样式 */
-.create-section {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
-  flex-shrink: 0;
-}
-
-.create-input-wrapper {
-  display: flex;
-  gap: 12px;
-}
-
-.create-input-wrapper input {
-  flex: 1;
-  padding: 14px 20px;
-  border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  outline: none;
-  background: rgba(255, 255, 255, 0.95);
-  transition: all 0.3s;
-}
-
-.create-input-wrapper input:focus {
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
-}
-
-.create-input-wrapper input::placeholder {
-  color: #999;
-}
-
-.create-input-wrapper button {
-  padding: 14px 32px;
-  background: white;
-  color: #667eea;
-  border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-  white-space: nowrap;
-}
-
-.create-input-wrapper button:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.create-input-wrapper button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.style-options {
-  display: flex;
-  align-items: center;
   gap: 16px;
-  margin-top: 16px;
-  flex-wrap: wrap;
-}
-
-.style-options label {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 14px;
-}
-
-.style-options select {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  background: rgba(255, 255, 255, 0.95);
-  cursor: pointer;
-  min-width: 120px;
-}
-
-/* 生成结果样式 */
-.create-result {
-  margin-top: 16px;
-  padding: 16px;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 12px;
-}
-
-.result-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.result-theme {
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
-}
-
-.result-status {
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.result-status.success {
-  background: #e6f7ee;
-  color: #52c41a;
-}
-
-.result-badge {
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-  margin-left: 8px;
-}
-
-.result-badge.local {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.result-badge.published {
-  background: #d1fae5;
-  color: #059669;
-}
-
-.result-info {
-  font-size: 12px;
-  color: #666;
-  margin-bottom: 12px;
-}
-
-/* 步骤详情样式 */
-.steps-detail {
-  margin-top: 16px;
-  background: #f9f9f9;
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.steps-title {
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 12px;
-  font-size: 14px;
-}
-
-.step-item {
-  padding: 12px;
-  background: #fff;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  border-left: 3px solid #52c41a;
-}
-
-.step-item.failed {
-  border-left-color: #f5222d;
-}
-
-.step-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-}
-
-.step-num {
-  background: #667eea;
-  color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.step-name {
-  font-weight: 500;
-  color: #333;
-}
-
-.step-duration {
-  color: #999;
-  font-size: 12px;
-}
-
-.step-status {
-  margin-left: auto;
-  font-size: 14px;
-}
-
-.step-item.success .step-status {
-  color: #52c41a;
-}
-
-.step-item.failed .step-status {
-  color: #f5222d;
-}
-
-.step-io {
-  margin-top: 10px;
-  padding: 10px;
-  background: #f5f5f5;
-  border-radius: 4px;
-}
-
-.io-label {
-  font-size: 12px;
-  color: #666;
-  margin-bottom: 4px;
-}
-
-.step-input, .step-output {
-  margin-bottom: 8px;
-}
-
-.step-input:last-child, .step-output:last-child {
-  margin-bottom: 0;
-}
-
-.step-io pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-size: 11px;
-  color: #333;
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.create-error {
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 8px;
-  color: #f5222d;
-  font-size: 14px;
-}
-
-/* 日志区域样式 */
-.logs-section {
-  background: white;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.logs-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
-  font-weight: 600;
-  color: #333;
-  flex-shrink: 0;
 }
 
-.logs-count {
-  font-size: 12px;
-  color: #999;
-  font-weight: normal;
-}
-
-.logs-content {
-  flex: 1;
-  overflow-y: auto;
-  background: #f9f9f9;
-  border-radius: 8px;
-  padding: 12px;
-  min-height: 200px;
-}
-
-.log-item {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  font-size: 13px;
-  padding: 8px 0;
-  font-family: 'Monaco', 'Menlo', monospace;
-  border-bottom: 1px solid #eee;
-  align-items: flex-start;
-}
-
-.log-item:last-child {
-  border-bottom: none;
-}
-
-.log-time {
-  color: #999;
-  font-size: 12px;
-  min-width: 70px;
-}
-
-.log-type {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: #e6f7ff;
-  color: #1890ff;
-  min-width: 40px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.log-item.success .log-type {
-  background: #e6f7ee;
-  color: #52c41a;
-}
-
-.log-item.error .log-type {
-  background: #fff1f0;
-  color: #f5222d;
-}
-
-.log-msg {
-  flex: 1;
-  color: #333;
-  word-break: break-all;
-  min-width: 200px;
-}
-
-.log-item.success .log-msg {
-  color: #52c41a;
-}
-
-.log-item.error .log-msg {
-  color: #f5222d;
-}
-
-.log-step-output {
-  width: 100%;
-  margin-top: 8px;
-  background: #f0f0f0;
-  border-radius: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-}
-
-.log-step-output pre {
-  margin: 0;
-  font-size: 11px;
-  font-family: 'Monaco', 'Menlo', monospace;
-  color: #555;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.logs-empty {
-  text-align: center;
-  color: #999;
-  padding: 40px;
-}
-
-/* 右侧处理状态样式 */
-.processing-status {
-  background: white;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  border-left: 4px solid #999;
-  transition: all 0.3s;
-  flex-shrink: 0;
-}
-
-.processing-status.active {
-  border-left-color: #52c41a;
-  box-shadow: 0 4px 16px rgba(82, 196, 26, 0.15);
-}
-
-.status-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.status-indicator {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #999;
-}
-
-.status-indicator.running {
-  background: #52c41a;
-  animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(82, 196, 26, 0.4); }
-  70% { box-shadow: 0 0 0 8px rgba(82, 196, 26, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(82, 196, 26, 0); }
-}
-
-.status-text {
-  font-weight: 500;
-  color: #333;
-  font-size: 14px;
-}
-
-.status-content {
-  display: flex;
-  gap: 24px;
-}
-
-.status-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.status-item .label {
-  font-size: 12px;
-  color: #999;
-}
-
-.status-item .value {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-}
-
-.status-item .value.pending-count {
-  color: #fa8c16;
-}
-
-/* 统计卡片 */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.stat-card {
+.stat-item {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 10px;
+  padding: 16px 24px;
   text-align: center;
+  flex: 1;
   color: white;
 }
 
-.stat-value {
+.stat-item .stat-value {
   font-size: 28px;
-  font-weight: bold;
-  margin-bottom: 4px;
+  font-weight: 700;
 }
 
-.stat-label {
+.stat-item .stat-value.pending {
+  color: #ffd666;
+}
+
+.stat-item .stat-label {
   font-size: 12px;
   opacity: 0.9;
 }
 
-.section {
-  background: white;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+.recent-activities {
+  border-top: 1px solid #f0f0f0;
+  padding-top: 12px;
 }
 
-.section h2 {
-  margin-bottom: 12px;
-  font-size: 14px;
-  color: #333;
-}
-
-.table-container {
-  overflow-x: auto;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th, td {
-  padding: 8px;
-  text-align: left;
-  border-bottom: 1px solid #eee;
-  font-size: 12px;
-}
-
-th {
-  font-weight: 500;
-  color: #666;
-}
-
-.status {
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-}
-
-.status.success {
-  background: #e6f7ee;
-  color: #52c41a;
-}
-
-.status.pending {
-  background: #fff7e6;
-  color: #fa8c16;
-}
-
-.status.failed {
-  background: #fff1f0;
-  color: #f5222d;
-}
-
-.knowledge-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.knowledge-item {
+.activity-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
-  background: #f9f9f9;
-  border-radius: 6px;
+  gap: 12px;
+  padding: 8px 0;
   font-size: 12px;
+  border-bottom: 1px solid #f5f5f5;
 }
 
-.knowledge-item .subject {
-  background: #667eea;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10px;
+.activity-item:last-child {
+  border-bottom: none;
 }
 
-.knowledge-item .topic {
+.activity-time {
+  color: #999;
+  min-width: 60px;
+}
+
+.activity-content {
   flex: 1;
-  color: #333;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.knowledge-item .count {
-  color: #999;
-  font-size: 11px;
+.activity-status {
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 10px;
 }
+
+.activity-status.success { background: #f6ffed; color: #52c41a; }
+.activity-status.pending { background: #fff7e6; color: #fa8c16; }
+.activity-status.failed { background: #fff2f0; color: #ff4d4f; }
+
+/* 工作流监控区 */
+.workflow-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.workflow-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workflow-select {
+  padding: 8px 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  min-width: 160px;
+}
+
+.run-btn {
+  padding: 8px 24px;
+  background: #52c41a;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.run-btn:hover:not(:disabled) {
+  background: #73d13d;
+}
+
+.run-btn:disabled {
+  background: #b7eb8f;
+  cursor: not-allowed;
+}
+
+.run-btn.running {
+  background: #1890ff;
+}
+
+.exec-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 16px;
+}
+
+.exec-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.exec-status.running { background: #e6f7ff; color: #1890ff; }
+.exec-status.success { background: #f6ffed; color: #52c41a; }
+.exec-status.failed { background: #fff2f0; color: #ff4d4f; }
+
+/* 流程图 */
+.flowchart-view {
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.agent-flow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 10px 0;
+}
+
+.flow-node {
+  min-width: 120px;
+  max-width: 160px;
+  background: white;
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+  border: 2px solid #e8e8e8;
+  transition: all 0.3s;
+}
+
+.flow-node.agent-node {
+  cursor: pointer;
+}
+
+.flow-node.agent-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.node-status {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+}
+
+.status-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.status-icon.success { background: #52c41a; color: white; }
+.status-icon.running { background: #1890ff; color: white; }
+.status-icon.failed { background: #ff4d4f; color: white; }
+.status-icon.pending { background: #f0f0f0; color: #999; }
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid white;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.node-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.step-num {
+  display: inline-block;
+  background: #667eea;
+  color: white;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  text-align: center;
+  line-height: 18px;
+  margin-right: 6px;
+}
+
+.node-agent {
+  font-size: 11px;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.node-detail-status {
+  background: #e6f7ff;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 10px;
+  color: #1890ff;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.agent-node.success .node-detail-status {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.agent-node.failed .node-detail-status {
+  background: #fff2f0;
+  color: #ff4d4f;
+}
+
+.node-output {
+  background: #f9f9f9;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 10px;
+  color: #666;
+  max-height: 36px;
+  overflow: hidden;
+}
+
+.node-output.loading {
+  color: #1890ff;
+  font-style: italic;
+}
+
+.node-error {
+  background: #fff2f0;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 10px;
+  color: #ff4d4f;
+}
+
+.node-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.node-stats .stat {
+  font-size: 9px;
+  color: #666;
+  background: rgba(0,0,0,0.05);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.node-stats .stat.pending {
+  color: #fa8c16;
+  background: #fff7e6;
+}
+
+.node-current {
+  font-size: 10px;
+  color: #1890ff;
+  margin-top: 4px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.agent-node.selected {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.agent-node.success { border-color: #b7eb8f; background: linear-gradient(135deg, #f6ffed 0%, #e6ffdb 100%); }
+.agent-node.running { border-color: #91d5ff; background: linear-gradient(135deg, #e6f7ff 0%, #d6efff 100%); animation: pulse 2s infinite; }
+.agent-node.failed { border-color: #ff7875; background: linear-gradient(135deg, #fff2f0 0%, #ffebe8 100%); }
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(24, 144, 255, 0); }
+}
+
+/* 日志筛选标签 */
+.log-filter {
+  color: #667eea;
+  font-weight: 500;
+}
+
+/* 统计栏 */
+.stats-bar {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-item {
+  background: white;
+  border-radius: 8px;
+  padding: 16px 24px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  min-width: 100px;
+}
+
+.stat-item .stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.stat-item .stat-value.pending {
+  color: #fa8c16;
+}
+
+.stat-item .stat-label {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+/* 需求节点 */
+.demand-node {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  cursor: pointer;
+}
+
+.demand-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.demand-node .node-header {
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.demand-stats {
+  text-align: center;
+}
+
+.stat-total {
+  font-size: 28px;
+  font-weight: 700;
+  color: white;
+}
+
+.stat-detail {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.8);
+}
+
+.stat-detail .pending { color: #ffd666; }
+.stat-detail .processing { color: #69c0ff; }
+.stat-detail .completed { color: #95de64; }
+
+/* 输出节点 */
+.output-node {
+  background: linear-gradient(135deg, #f6f8fc 0%, #eef1f5 100%);
+  border: 2px solid #d9d9d9;
+}
+
+.output-node.success {
+  background: linear-gradient(135deg, #f6ffed 0%, #e6ffdb 100%);
+  border-color: #b7eb8f;
+}
+
+.node-body {
+  font-size: 11px;
+  color: #666;
+}
+
+.node-body .pending {
+  color: #999;
+}
+
+/* 箭头 */
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 4px;
+}
+
+/* 日志区域 */
+.logs-section {
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.activity-status.success { background: #f6ffed; color: #52c41a; }
+.activity-status.pending { background: #fff7e6; color: #fa8c16; }
+.activity-status.failed { background: #fff2f0; color: #ff4d4f; }
 
 .empty {
   text-align: center;
@@ -1176,23 +1108,168 @@ th {
   font-size: 12px;
 }
 
-/* 响应式布局 */
-@media (max-width: 1024px) {
-  .dashboard-layout {
-    flex-direction: column;
-    height: auto;
-  }
-  
-  .left-panel {
-    height: auto;
-  }
-  
-  .right-panel {
-    width: 100%;
-  }
-  
-  .stats-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
+/* 日志区域 */
+.logs-section {
+  flex: 1;
+  background: #1e1e1e;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
 }
+
+.logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.logs-count {
+  font-size: 12px;
+  color: #888;
+}
+
+.logs-content {
+  flex: 1;
+  overflow-y: auto;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 12px;
+}
+
+.log-item {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  color: #d4d4d4;
+  border-bottom: 1px solid #333;
+}
+
+.log-time { color: #888; min-width: 60px; }
+.log-level { min-width: 40px; text-align: center; border-radius: 2px; padding: 0 4px; }
+.log-step { color: #569cd6; }
+.log-msg { flex: 1; }
+.log-duration { color: #888; }
+
+.log-item.INFO .log-level { color: #3794ff; }
+.log-item.WARN .log-level { color: #cca700; }
+.log-item.ERROR .log-level { color: #f14c4c; }
+.log-item.DEBUG .log-level { color: #888; }
+
+.log-item.ERROR .log-msg { color: #f14c4c; }
+
+.logs-empty {
+  text-align: center;
+  color: #666;
+  padding: 40px;
+}
+
+/* 弹窗 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  width: 600px;
+  max-width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #999;
+}
+
+.modal-body {
+  padding: 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.detail-row label {
+  min-width: 60px;
+  color: #999;
+  font-size: 13px;
+}
+
+.detail-section {
+  margin-bottom: 16px;
+}
+
+.detail-section label {
+  display: block;
+  margin-bottom: 8px;
+  color: #999;
+  font-size: 13px;
+}
+
+.detail-section.error label { color: #ff4d4f; }
+
+.code-block {
+  background: #f5f7fa;
+  padding: 12px;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.error-text {
+  background: #fff2f0;
+  padding: 12px;
+  border-radius: 6px;
+  color: #ff4d4f;
+  font-size: 13px;
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.status-badge.success { background: #f0fff4; color: #52c41a; }
+.status-badge.running { background: #e6f7ff; color: #1890ff; }
+.status-badge.failed { background: #fff2f0; color: #ff4d4f; }
+.status-badge.pending { background: #f5f5f5; color: #999; }
 </style>

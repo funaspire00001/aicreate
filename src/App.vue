@@ -14,10 +14,6 @@
             <span class="nav-icon">⚙️</span>
             <span class="nav-text">工作流管理</span>
           </router-link>
-          <router-link to="/monitor" class="nav-item">
-            <span class="nav-icon">📡</span>
-            <span class="nav-text">执行监控</span>
-          </router-link>
           <router-link to="/agents" class="nav-item">
             <span class="nav-icon">👥</span>
             <span class="nav-text">智能体管理</span>

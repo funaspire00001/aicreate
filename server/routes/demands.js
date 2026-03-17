@@ -1,8 +1,146 @@
 import express from 'express';
 import Demand from '../models/Demand.js';
+import KeyPoint from '../models/KeyPoint.js';
+import KnowledgeTree from '../models/KnowledgeTree.js';
+import CardPlan from '../models/CardPlan.js';
+import StepLog from '../models/StepLog.js';
 import { v4 as uuidv4 } from 'uuid';
+import { getAgentStatus } from '../services/agentScheduler.js';
 
 const router = express.Router();
+
+/**
+ * 获取智能体状态
+ */
+router.get('/agents/status', async (req, res) => {
+  try {
+    const status = getAgentStatus();
+    res.json({
+      success: true,
+      agents: status
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取智能体数据统计
+ */
+router.get('/agents/stats', async (req, res) => {
+  try {
+    const [
+      keyPointTotal,
+      keyPointPending,
+      keyPointCompleted,
+      knowledgeTreeTotal,
+      knowledgeTreePending,
+      knowledgeTreeCompleted,
+      cardPlanTotal,
+      cardPlanPending,
+      cardPlanCompleted,
+      cardPlanTotalCards
+    ] = await Promise.all([
+      KeyPoint.countDocuments(),
+      KeyPoint.countDocuments({ status: 'pending' }),
+      KeyPoint.countDocuments({ status: 'completed' }),
+      KnowledgeTree.countDocuments(),
+      KnowledgeTree.countDocuments({ status: 'pending' }),
+      KnowledgeTree.countDocuments({ status: 'completed' }),
+      CardPlan.countDocuments(),
+      CardPlan.countDocuments({ status: 'pending' }),
+      CardPlan.countDocuments({ status: 'completed' }),
+      CardPlan.aggregate([{ $group: { _id: null, total: { $sum: '$totalCards' } } }])
+    ]);
+    
+    // 获取待处理数量（未被下游消费）
+    const [
+      keyPointUnconsumed,
+      knowledgeTreeUnconsumed,
+      cardPlanUnconsumed
+    ] = await Promise.all([
+      KeyPoint.countDocuments({ status: 'completed', consumedByKnowledgeTree: false }),
+      KnowledgeTree.countDocuments({ status: 'completed', consumedByCardPlan: false }),
+      CardPlan.countDocuments({ status: 'completed', consumedByCardGenerator: false })
+    ]);
+    
+    res.json({
+      success: true,
+      stats: {
+        organizer: {
+          total: keyPointTotal,
+          pending: keyPointPending,
+          completed: keyPointCompleted,
+          unconsumed: keyPointUnconsumed
+        },
+        architect: {
+          total: knowledgeTreeTotal,
+          pending: knowledgeTreePending,
+          completed: knowledgeTreeCompleted,
+          unconsumed: knowledgeTreeUnconsumed
+        },
+        planner: {
+          total: cardPlanTotal,
+          pending: cardPlanPending,
+          completed: cardPlanCompleted,
+          unconsumed: cardPlanUnconsumed,
+          totalCards: cardPlanTotalCards[0]?.total || 0
+        },
+        generator: {
+          totalCards: cardPlanTotalCards[0]?.total || 0,
+          pending: cardPlanUnconsumed
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取指定智能体的日志
+ */
+router.get('/agents/:key/logs', async (req, res) => {
+  try {
+    const { key } = req.params;
+    const { limit = 50 } = req.query;
+    
+    const validKeys = ['organizer', 'architect', 'planner', 'generator', 'system'];
+    if (!validKeys.includes(key)) {
+      return res.status(400).json({
+        success: false,
+        error: '无效的智能体标识'
+      });
+    }
+    
+    const logs = await StepLog.find({ agentKey: key })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+    
+    res.json({
+      success: true,
+      logs: logs.map(log => ({
+        id: log.id,
+        level: log.level,
+        message: log.message,
+        agentName: log.agentName,
+        duration: log.duration,
+        createdAt: log.createdAt
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 /**
  * 获取所有需求
@@ -180,6 +318,97 @@ router.put('/:id', async (req, res) => {
     res.json({
       success: true,
       demand
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 启动需求处理（将状态改为processing，调度器会自动接管）
+ */
+router.post('/:id/start', async (req, res) => {
+  try {
+    const demand = await Demand.findOne({ id: req.params.id });
+    
+    if (!demand) {
+      return res.status(404).json({
+        success: false,
+        error: '需求不存在'
+      });
+    }
+    
+    if (demand.status === 'processing') {
+      return res.status(400).json({
+        success: false,
+        error: '需求正在处理中'
+      });
+    }
+    
+    if (demand.status === 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: '需求已完成'
+      });
+    }
+    
+    demand.status = 'processing';
+    demand.currentStep = 0;
+    demand.errorMessage = null;
+    await demand.save();
+    
+    res.json({
+      success: true,
+      message: '需求已启动处理',
+      demand
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 获取需求执行详情（包含所有关联数据）
+ */
+router.get('/:id/execution', async (req, res) => {
+  try {
+    const KeyPoint = (await import('../models/KeyPoint.js')).default;
+    const KnowledgeTree = (await import('../models/KnowledgeTree.js')).default;
+    const CardPlan = (await import('../models/CardPlan.js')).default;
+    const StepLog = (await import('../models/StepLog.js')).default;
+    
+    const demand = await Demand.findOne({ id: req.params.id });
+    
+    if (!demand) {
+      return res.status(404).json({
+        success: false,
+        error: '需求不存在'
+      });
+    }
+    
+    // 获取关联数据
+    const [keyPoint, knowledgeTree, cardPlan, logs] = await Promise.all([
+      demand.keyPointId ? KeyPoint.findOne({ id: demand.keyPointId }) : null,
+      demand.knowledgeTreeId ? KnowledgeTree.findOne({ id: demand.knowledgeTreeId }) : null,
+      demand.cardPlanId ? CardPlan.findOne({ id: demand.cardPlanId }) : null,
+      StepLog.find({ executionId: demand.id }).sort({ createdAt: 1 })
+    ]);
+    
+    res.json({
+      success: true,
+      execution: {
+        demand,
+        keyPoint,
+        knowledgeTree,
+        cardPlan,
+        logs
+      }
     });
   } catch (error) {
     res.status(500).json({

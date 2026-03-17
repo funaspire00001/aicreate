@@ -20,6 +20,7 @@ import dataManagerRoutes from './routes/dataManager.js';
 import { createAdminRouter } from './routes/admin.js';
 
 import { startScheduler } from './services/scheduler.js';
+import { startAgentScheduler } from './services/agentScheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -102,6 +103,9 @@ mongoose.connect(MONGO_URI)
       
       // 启动定时任务
       startScheduler();
+      
+      // 启动智能体调度器（每5秒检查一次）
+      startAgentScheduler(5000);
     });
   })
   .catch((err) => {
