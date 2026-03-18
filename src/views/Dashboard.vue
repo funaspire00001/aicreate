@@ -39,126 +39,129 @@
       </div>
     </div>
 
-    <!-- 下方：工作流监控区 -->
-    <div class="workflow-section">
+    <!-- 下方：智能体工作空间 -->
+    <div class="workspace-section">
       <div class="section-header">
-        <h2>工作流执行监控</h2>
-        <div class="workflow-controls">
-          <select v-model="selectedWorkflowId" class="workflow-select" @change="onWorkflowChange">
-            <option value="">选择工作流</option>
-            <option v-for="wf in workflows" :key="wf.id" :value="wf.id">{{ wf.name }}</option>
-          </select>
+        <h2>智能体工作空间</h2>
+        <div class="workspace-controls">
           <button @click="autoRun" class="run-btn" :disabled="isRunning" :class="{ running: isRunning }">
-            {{ isRunning ? '运行中...' : '开始运行' }}
+            {{ isRunning ? '运行中...' : '启动处理' }}
           </button>
         </div>
       </div>
 
-      <div class="exec-info" v-if="currentExecution">
-        <span class="exec-id">ID: {{ currentExecution.id?.slice(0, 8) }}</span>
-        <span class="exec-time">{{ formatTime(currentExecution.startTime) }}</span>
-        <span :class="['exec-status', currentExecution.status]">{{ getStatusText(currentExecution.status) }}</span>
+      <div class="workspace-stats">
+        <span class="stat"><b>{{ demandStats.pending }}</b> 待处理</span>
+        <span class="stat"><b>{{ demandStats.processing }}</b> 处理中</span>
+        <span class="stat"><b>{{ demandStats.completed }}</b> 已完成</span>
       </div>
 
-      <!-- 流程图视图 -->
-      <div class="flowchart-view">
-        <div class="agent-flow">
-          <!-- 需求管理节点 -->
-          <div :class="['flow-node demand-node', { selected: selectedAgentKey === 'demand' }]" 
-               @click="selectAgent('demand')">
-            <div class="node-status">
-              <span class="status-icon" :class="demandStats.total > 0 ? 'success' : 'pending'">
-                {{ demandStats.total > 0 ? '✓' : '○' }}
-              </span>
+      <!-- 工作空间画布 -->
+      <div class="workspace-canvas" ref="workspaceCanvas">
+        <!-- 连接线 -->
+        <svg class="connection-lines" v-if="showConnections">
+          <line 
+            v-for="(line, idx) in connectionLines" 
+            :key="idx"
+            :x1="line.x1" :y1="line.y1"
+            :x2="line.x2" :y2="line.y2"
+            stroke="#d9d9d9"
+            stroke-width="2"
+            stroke-dasharray="5,5"
+          />
+        </svg>
+        
+        <!-- 需求工作站 -->
+        <div 
+          :class="['station-card', { active: selectedAgentKey === 'demand', dragging: draggingKey === 'demand' }]"
+          :style="getStationStyle('demand')"
+          @mousedown="startDrag($event, 'demand')"
+          @click.stop="onStationClick('demand')"
+        >
+          <div class="station-drag-handle">⋮⋮</div>
+          <div class="station-header">
+            <div class="station-icon">📋</div>
+            <div class="station-title">需求管理</div>
+          </div>
+          <div class="station-status" :class="demandStats.pending > 0 ? 'has-work' : 'idle'">
+            {{ demandStats.pending > 0 ? '有待处理' : '空闲' }}
+          </div>
+          <div class="station-queue">
+            <div class="queue-item">
+              <span class="queue-label">待处理</span>
+              <span class="queue-value pending">{{ demandStats.pending }}</span>
             </div>
-            <div class="node-header">
-              <span class="node-icon">📋</span>
-              需求管理
+            <div class="queue-item">
+              <span class="queue-label">处理中</span>
+              <span class="queue-value processing">{{ demandStats.processing }}</span>
             </div>
-            <div class="demand-stats">
-              <div class="stat-total">{{ demandStats.total }}</div>
-              <div class="stat-detail">
-                <span class="pending">待{{ demandStats.pending }}</span>
-                <span class="processing">处理中{{ demandStats.processing }}</span>
-              </div>
+            <div class="queue-item">
+              <span class="queue-label">已完成</span>
+              <span class="queue-value">{{ demandStats.completed }}</span>
             </div>
           </div>
+        </div>
 
-          <template v-for="(step, index) in pipelineSteps" :key="index">
-            <!-- 箭头 -->
-            <div class="flow-arrow">
-              <svg width="40" height="24" viewBox="0 0 40 24">
-                <line x1="0" y1="12" x2="30" y2="12" stroke="#d9d9d9" stroke-width="2"/>
-                <polygon points="30,6 40,12 30,18" :fill="getArrowColor(step, index)"/>
-              </svg>
+        <!-- 智能体工作站 -->
+        <div 
+          v-for="agent in agentWorkstations" 
+          :key="agent.key"
+          :class="['station-card', agent.status, { active: selectedAgentKey === agent.key, dragging: draggingKey === agent.key }]"
+          :style="getStationStyle(agent.key)"
+          @mousedown="startDrag($event, agent.key)"
+          @click.stop="onStationClick(agent.key)"
+        >
+          <div class="station-drag-handle">⋮⋮</div>
+          <div class="station-header">
+            <div class="station-icon">{{ agent.icon }}</div>
+            <div class="station-title">{{ agent.name }}</div>
+            <div class="station-indicator" :class="agent.status">
+              <span v-if="agent.status === 'running'" class="spinner-small"></span>
+              <span v-else-if="agent.status === 'success'">✓</span>
+              <span v-else-if="agent.status === 'failed'">✗</span>
             </div>
-            
-            <!-- 智能体节点 -->
-            <div :class="['flow-node', 'agent-node', step.status, { selected: selectedAgentKey === step.key }]" 
-                 @click="selectAgent(step.key)">
-              <div class="node-status">
-                <span v-if="step.status === 'success'" class="status-icon success">✓</span>
-                <span v-else-if="step.status === 'running'" class="status-icon running">
-                  <span class="spinner"></span>
-                </span>
-                <span v-else-if="step.status === 'failed'" class="status-icon failed">✗</span>
-                <span v-else class="status-icon pending">○</span>
-              </div>
-              
-              <div class="node-header">
-                <span class="step-num">{{ index + 1 }}</span>
-                {{ step.name }}
-              </div>
-              
-              <div class="node-agent">{{ step.agentName }}</div>
-              
-              <!-- 数据统计 -->
-              <div class="node-stats">
-                <span class="stat" v-if="step.stats?.total !== undefined">
-                  总计: {{ step.stats.total }}
-                </span>
-                <span class="stat pending" v-if="step.stats?.unconsumed">
-                  待处理: {{ step.stats.unconsumed }}
-                </span>
-                <span class="stat" v-if="step.stats?.totalCards">
-                  卡片: {{ step.stats.totalCards }}
-                </span>
-              </div>
-              
-              <div class="node-current" v-if="step.currentTask && step.status === 'running'">
-                {{ step.currentTask }}
-              </div>
-              <div class="node-error" v-if="step.status === 'failed'">
-                执行失败
-              </div>
-            </div>
-          </template>
-
-          <!-- 最终箭头 -->
-          <div class="flow-arrow">
-            <svg width="40" height="24" viewBox="0 0 40 24">
-              <line x1="0" y1="12" x2="30" y2="12" stroke="#d9d9d9" stroke-width="2"/>
-              <polygon points="30,6 40,12 30,18" :fill="currentExecution?.status === 'success' ? '#52c41a' : '#d9d9d9'"/>
-            </svg>
           </div>
+          <div class="station-status" :class="agent.status">
+            {{ getAgentStatusText(agent.status) }}
+          </div>
+          <div class="station-queue">
+            <div class="queue-item" v-if="agent.stats?.unconsumed !== undefined">
+              <span class="queue-label">待消费</span>
+              <span class="queue-value pending">{{ agent.stats.unconsumed || 0 }}</span>
+            </div>
+            <div class="queue-item" v-if="agent.stats?.total !== undefined">
+              <span class="queue-label">已处理</span>
+              <span class="queue-value">{{ agent.stats.total || 0 }}</span>
+            </div>
+            <div class="queue-item" v-if="agent.stats?.totalCards !== undefined">
+              <span class="queue-label">生成卡片</span>
+              <span class="queue-value success">{{ agent.stats.totalCards || 0 }}</span>
+            </div>
+          </div>
+          <div class="station-current" v-if="agent.currentTask">
+            {{ agent.currentTask }}
+          </div>
+        </div>
 
-          <!-- 输出节点 -->
-          <div :class="['flow-node output-node', { selected: selectedAgentKey === 'output', success: demandStats.completed > 0 }]" 
-               @click="selectAgent('output')">
-            <div class="node-status">
-              <span class="status-icon" :class="demandStats.completed > 0 ? 'success' : 'pending'">
-                {{ demandStats.completed > 0 ? '✓' : '○' }}
-              </span>
-            </div>
-            <div class="node-header">
-              <span class="node-icon">📤</span>
-              完成输出
-            </div>
-            <div class="demand-stats">
-              <div class="stat-total">{{ demandStats.completed }}</div>
-              <div class="stat-detail">
-                <span class="completed">已完成</span>
-              </div>
+        <!-- 输出工作站 -->
+        <div 
+          :class="['station-card output', { active: selectedAgentKey === 'output', dragging: draggingKey === 'output' }]"
+          :style="getStationStyle('output')"
+          @mousedown="startDrag($event, 'output')"
+          @click.stop="onStationClick('output')"
+        >
+          <div class="station-drag-handle">⋮⋮</div>
+          <div class="station-header">
+            <div class="station-icon">📤</div>
+            <div class="station-title">卡片输出</div>
+          </div>
+          <div class="station-status" :class="agentStats.generator?.totalCards > 0 ? 'success' : 'idle'">
+            {{ agentStats.generator?.totalCards > 0 ? '已输出' : '待输出' }}
+          </div>
+          <div class="station-queue">
+            <div class="queue-item">
+              <span class="queue-label">卡片总数</span>
+              <span class="queue-value success">{{ agentStats.generator?.totalCards || 0 }}</span>
             </div>
           </div>
         </div>
@@ -244,6 +247,151 @@ const agentStatus = ref({
   generator: { status: 'idle', currentTask: null, lastRun: null }
 })
 
+// ========== 拖拽相关 ==========
+const workspaceCanvas = ref(null)
+const draggingKey = ref('')
+const dragStartPos = ref({ x: 0, y: 0 })
+const stationStartPos = ref({ x: 0, y: 0 })
+const showConnections = ref(true)
+const isActuallyDragging = ref(false) // 是否真的发生了拖拽（移动距离超过阈值）
+const DRAG_THRESHOLD = 5 // 拖拽阈值（像素）
+
+// 工作站默认位置配置
+const defaultPositions = {
+  demand: { x: 20, y: 20 },
+  organizer: { x: 240, y: 20 },
+  architect: { x: 460, y: 20 },
+  planner: { x: 240, y: 220 },
+  generator: { x: 460, y: 220 },
+  output: { x: 680, y: 220 }
+}
+
+// 工作站位置状态
+const stationPositions = ref({})
+
+// 初始化位置（从localStorage恢复或使用默认值）
+const initPositions = () => {
+  const saved = localStorage.getItem('workspace_positions')
+  if (saved) {
+    try {
+      stationPositions.value = JSON.parse(saved)
+    } catch {
+      stationPositions.value = { ...defaultPositions }
+    }
+  } else {
+    stationPositions.value = { ...defaultPositions }
+  }
+}
+
+// 保存位置到localStorage
+const savePositions = () => {
+  localStorage.setItem('workspace_positions', JSON.stringify(stationPositions.value))
+}
+
+// 获取工作站样式
+const getStationStyle = (key) => {
+  const pos = stationPositions.value[key] || defaultPositions[key] || { x: 0, y: 0 }
+  return {
+    left: `${pos.x}px`,
+    top: `${pos.y}px`
+  }
+}
+
+// 开始拖拽
+const startDrag = (event, key) => {
+  if (event.button !== 0) return // 只响应左键
+  
+  draggingKey.value = key
+  dragStartPos.value = { x: event.clientX, y: event.clientY }
+  stationStartPos.value = { ...stationPositions.value[key] } || { x: 0, y: 0 }
+  isActuallyDragging.value = false // 重置拖拽标记
+  
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+  
+  event.preventDefault()
+}
+
+// 拖拽中
+const onDrag = (event) => {
+  if (!draggingKey.value) return
+  
+  const dx = event.clientX - dragStartPos.value.x
+  const dy = event.clientY - dragStartPos.value.y
+  
+  // 检查是否超过拖拽阈值
+  if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+    isActuallyDragging.value = true
+  }
+  
+  const newX = stationStartPos.value.x + dx
+  const newY = stationStartPos.value.y + dy
+  
+  // 限制在工作空间范围内
+  const maxX = workspaceCanvas.value ? workspaceCanvas.value.clientWidth - 180 : 800
+  const maxY = workspaceCanvas.value ? workspaceCanvas.value.clientHeight - 180 : 600
+  
+  stationPositions.value[draggingKey.value] = {
+    x: Math.max(0, Math.min(newX, maxX)),
+    y: Math.max(0, Math.min(newY, maxY))
+  }
+}
+
+// 停止拖拽
+const stopDrag = () => {
+  if (draggingKey.value) {
+    savePositions()
+  }
+  
+  // 延迟重置，确保click事件能读取到正确的isActuallyDragging值
+  const wasDragging = isActuallyDragging.value
+  draggingKey.value = ''
+  
+  setTimeout(() => {
+    isActuallyDragging.value = false
+  }, 100)
+  
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+}
+
+// 点击工作站（排除拖拽）
+const onStationClick = (key) => {
+  // 如果发生了拖拽，不触发详情弹窗
+  if (isActuallyDragging.value) {
+    return
+  }
+  selectAgent(key)
+}
+
+// 连接线计算
+const connectionLines = computed(() => {
+  const lines = []
+  const flow = ['demand', 'organizer', 'architect', 'planner', 'generator', 'output']
+  
+  for (let i = 0; i < flow.length - 1; i++) {
+    const from = stationPositions.value[flow[i]] || defaultPositions[flow[i]]
+    const to = stationPositions.value[flow[i + 1]] || defaultPositions[flow[i + 1]]
+    
+    if (from && to) {
+      lines.push({
+        x1: from.x + 90,
+        y1: from.y + 90,
+        x2: to.x + 90,
+        y2: to.y + 90
+      })
+    }
+  }
+  
+  return lines
+})
+
+// 重置位置
+const resetPositions = () => {
+  stationPositions.value = { ...defaultPositions }
+  savePositions()
+}
+
 // 智能体数据统计
 const agentStats = ref({
   organizer: { total: 0, completed: 0, unconsumed: 0 },
@@ -289,6 +437,42 @@ const pipelineSteps = computed(() => {
     }
   })
 })
+
+// 智能体工作站列表
+const agentWorkstations = computed(() => {
+  const workstations = [
+    { key: 'organizer', name: '信息整理', icon: '🔍' },
+    { key: 'architect', name: '知识树构建', icon: '🌳' },
+    { key: 'planner', name: '卡片规划', icon: '📐' },
+    { key: 'generator', name: '卡片生成', icon: '🎨' }
+  ]
+  
+  return workstations.map(ws => {
+    const status = agentStatus.value[ws.key]
+    const stats = agentStats.value[ws.key]
+    const wsStatus = status.status === 'running' ? 'running' :
+                     status.status === 'failed' ? 'failed' :
+                     status.status === 'idle' && status.lastRun ? 'success' : 'idle'
+    
+    return {
+      ...ws,
+      status: wsStatus,
+      currentTask: status.currentTask,
+      stats: stats
+    }
+  })
+})
+
+// 获取智能体状态文本
+const getAgentStatusText = (status) => {
+  const map = {
+    idle: '空闲',
+    running: '运行中',
+    success: '已完成',
+    failed: '出错'
+  }
+  return map[status] || status
+}
 
 const getArrowColor = (step, index) => {
   if (step.status === 'success' || step.status === 'running') return '#667eea'
@@ -732,6 +916,7 @@ const getAgentDisplayName = (key) => {
 }
 
 onMounted(() => {
+  initPositions() // 初始化工作站位置
   checkBackendHealth()
   fetchWorkflows()
   fetchDemandStats()
@@ -879,31 +1064,23 @@ onUnmounted(() => {
 .activity-status.pending { background: #fff7e6; color: #fa8c16; }
 .activity-status.failed { background: #fff2f0; color: #ff4d4f; }
 
-/* 工作流监控区 */
-.workflow-section {
+/* 智能体工作空间 */
+.workspace-section {
   background: white;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 
-.workflow-controls {
+.workspace-controls {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.workflow-select {
-  padding: 8px 16px;
-  border: 1px solid #d9d9d9;
-  border-radius: 6px;
-  font-size: 14px;
-  min-width: 160px;
-}
-
 .run-btn {
   padding: 8px 24px;
-  background: #52c41a;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
   border-radius: 6px;
@@ -914,7 +1091,8 @@ onUnmounted(() => {
 }
 
 .run-btn:hover:not(:disabled) {
-  background: #73d13d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .run-btn:disabled {
@@ -923,88 +1101,146 @@ onUnmounted(() => {
 }
 
 .run-btn.running {
-  background: #1890ff;
+  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
 }
 
-.exec-info {
+.workspace-stats {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.workspace-stats .stat {
+  font-size: 13px;
   color: #666;
-  margin-bottom: 16px;
 }
 
-.exec-status {
-  padding: 2px 8px;
-  border-radius: 10px;
+.workspace-stats .stat b {
+  font-size: 18px;
+  color: #333;
+  margin-right: 4px;
 }
 
-.exec-status.running { background: #e6f7ff; color: #1890ff; }
-.exec-status.success { background: #f6ffed; color: #52c41a; }
-.exec-status.failed { background: #fff2f0; color: #ff4d4f; }
-
-/* 流程图 */
-.flowchart-view {
-  overflow-x: auto;
-  margin-bottom: 16px;
-}
-
-.agent-flow {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0;
-  padding: 10px 0;
-}
-
-.flow-node {
-  width: 140px;
-  min-height: 100px;
-  background: white;
-  border-radius: 10px;
-  padding: 12px;
+/* 工作空间画布 */
+.workspace-canvas {
   position: relative;
-  border: 2px solid #e8e8e8;
-  transition: all 0.3s;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  min-height: 650px;
+  background: 
+    linear-gradient(90deg, #f0f0f0 1px, transparent 1px),
+    linear-gradient(#f0f0f0 1px, transparent 1px);
+  background-size: 20px 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  user-select: none;
 }
 
-.flow-node.agent-node {
-  cursor: pointer;
-}
-
-.flow-node.agent-node:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-}
-
-.node-status {
+.connection-lines {
   position: absolute;
-  top: -8px;
-  right: -8px;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
 }
 
-.status-icon {
+.station-card {
+  position: absolute;
+  width: 180px;
+  background: white;
+  border: 2px solid #e8e8e8;
+  border-radius: 12px;
+  padding: 16px;
+  cursor: move;
+  transition: box-shadow 0.3s, border-color 0.3s;
+  z-index: 10;
+}
+
+.station-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.station-card.dragging {
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+  z-index: 100;
+  cursor: grabbing;
+}
+
+.station-card.active {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.station-card.running {
+  border-color: #1890ff;
+  background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 100%);
+}
+
+.station-card.success {
+  border-color: #52c41a;
+  background: linear-gradient(135deg, #f6ffed 0%, #f0fff0 100%);
+}
+
+.station-card.failed {
+  border-color: #ff4d4f;
+  background: linear-gradient(135deg, #fff2f0 0%, #fff5f5 100%);
+}
+
+.station-card.output {
+  background: linear-gradient(135deg, #f6f8fc 0%, #f0f2f5 100%);
+}
+
+.station-drag-handle {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  color: #d9d9d9;
+  font-size: 14px;
+  cursor: grab;
+  letter-spacing: -2px;
+}
+
+.station-card.dragging .station-drag-handle {
+  cursor: grabbing;
+}
+
+.station-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.station-icon {
+  font-size: 24px;
+}
+
+.station-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  flex: 1;
+}
+
+.station-indicator {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  font-size: 12px;
-  font-weight: bold;
+  font-size: 10px;
 }
 
-.status-icon.success { background: #52c41a; color: white; }
-.status-icon.running { background: #1890ff; color: white; }
-.status-icon.failed { background: #ff4d4f; color: white; }
-.status-icon.pending { background: #f0f0f0; color: #999; }
+.station-indicator.idle { background: #f0f0f0; color: #999; }
+.station-indicator.running { background: #1890ff; color: white; }
+.station-indicator.success { background: #52c41a; color: white; }
+.station-indicator.failed { background: #ff4d4f; color: white; }
 
-.spinner {
+.spinner-small {
   width: 10px;
   height: 10px;
   border: 2px solid white;
@@ -1017,119 +1253,59 @@ onUnmounted(() => {
   to { transform: rotate(360deg); }
 }
 
-.node-header {
-  font-size: 13px;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 4px;
-}
-
-.step-num {
-  display: inline-block;
-  background: #667eea;
-  color: white;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  font-size: 10px;
-  text-align: center;
-  line-height: 18px;
-  margin-right: 6px;
-}
-
-.node-agent {
-  font-size: 11px;
-  color: #999;
-  margin-bottom: 8px;
-}
-
-.node-detail-status {
-  background: #e6f7ff;
+.station-status {
+  font-size: 12px;
+  padding: 4px 8px;
   border-radius: 4px;
-  padding: 3px 6px;
-  font-size: 10px;
-  color: #1890ff;
-  margin-bottom: 6px;
+  margin-bottom: 12px;
   text-align: center;
 }
 
-.agent-node.success .node-detail-status {
-  background: #f6ffed;
-  color: #52c41a;
+.station-status.idle { background: #f5f5f5; color: #999; }
+.station-status.has-work { background: #fff7e6; color: #fa8c16; }
+.station-status.running { background: #e6f7ff; color: #1890ff; }
+.station-status.success { background: #f6ffed; color: #52c41a; }
+.station-status.failed { background: #fff2f0; color: #ff4d4f; }
+
+.station-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.agent-node.failed .node-detail-status {
-  background: #fff2f0;
-  color: #ff4d4f;
-}
-
-.node-output {
+.queue-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 4px 8px;
   background: #f9f9f9;
   border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 10px;
-  color: #666;
-  max-height: 36px;
-  overflow: hidden;
 }
 
-.node-output.loading {
+.queue-label {
+  color: #999;
+}
+
+.queue-value {
+  font-weight: 600;
+  color: #333;
+}
+
+.queue-value.pending { color: #fa8c16; }
+.queue-value.processing { color: #1890ff; }
+.queue-value.success { color: #52c41a; }
+
+.station-current {
+  margin-top: 10px;
+  padding: 8px;
+  background: #e6f7ff;
+  border-radius: 6px;
+  font-size: 11px;
   color: #1890ff;
-  font-style: italic;
-}
-
-.node-error {
-  background: #fff2f0;
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 10px;
-  color: #ff4d4f;
-}
-
-.node-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-content: center;
-  margin-top: 4px;
-}
-
-.node-stats .stat {
-  font-size: 9px;
-  color: #666;
-  background: rgba(0,0,0,0.05);
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.node-stats .stat.pending {
-  color: #fa8c16;
-  background: #fff7e6;
-}
-
-.node-current {
-  font-size: 10px;
-  color: #1890ff;
-  margin-top: 4px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.agent-node.selected {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
-}
-
-.agent-node.success { border-color: #b7eb8f; background: linear-gradient(135deg, #f6ffed 0%, #e6ffdb 100%); }
-.agent-node.running { border-color: #91d5ff; background: linear-gradient(135deg, #e6f7ff 0%, #d6efff 100%); animation: pulse 2s infinite; }
-.agent-node.failed { border-color: #ff7875; background: linear-gradient(135deg, #fff2f0 0%, #ffebe8 100%); }
-
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(24, 144, 255, 0); }
 }
 
 /* 日志筛选标签 */
