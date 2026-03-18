@@ -68,9 +68,11 @@ router.get('/agents/stats', async (req, res) => {
       CardPlan.countDocuments({ status: 'completed', consumedByCardGenerator: false })
     ]);
     
+    // 返回按 agentId 为 key 的统计（兼容旧的硬编码 key 和新的动态 id）
     res.json({
       success: true,
       stats: {
+        // 兼容旧版（organizer, architect 等）
         organizer: {
           total: keyPointTotal,
           pending: keyPointPending,
@@ -112,14 +114,7 @@ router.get('/agents/:key/logs', async (req, res) => {
     const { key } = req.params;
     const { limit = 50 } = req.query;
     
-    const validKeys = ['organizer', 'architect', 'planner', 'generator', 'system', 'demand', 'output'];
-    if (!validKeys.includes(key)) {
-      return res.status(400).json({
-        success: false,
-        error: '无效的智能体标识'
-      });
-    }
-    
+    // 支持任意 agentKey（不再限制 enum）
     const logs = await StepLog.find({ agentKey: key })
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
@@ -150,176 +145,37 @@ router.get('/agents/:key/detail', async (req, res) => {
   try {
     const { key } = req.params;
     
-    // 特殊节点处理 - 需求智能体
-    if (key === 'demand') {
-      // 尝试获取需求智能体配置
-      let agent = await Agent.findOne({ key: 'demand' });
-      
-      // 如果不存在，创建默认配置
-      if (!agent) {
-        agent = await Agent.create({
-          id: `agent_demand_${Date.now()}`,
-          key: 'demand',
-          name: '需求智能体',
-          type: 'source',
-          description: '收集和管理用户需求，支持AI增强的质量评估',
-          enabled: true,
-          ai: {
-            enabled: false,
-            modelId: 'ollama-qwen',
-            prompt: '你是一个需求分析专家。请分析用户需求的优先级、质量、分类，并给出改进建议。',
-            temperature: 0.3,
-            maxTokens: 2048
-          },
-          data: {
-            inputs: [
-              { source: 'user_input', type: 'direct', description: '用户直接输入' },
-              { source: 'feedback', type: 'polling', description: '用户反馈' }
-            ],
-            output: {
-              collection: 'demands',
-              status: 'pending'
-            }
-          },
-          schedule: {
-            interval: 5000,
-            batchSize: 1,
-            enabled: true
-          }
-        });
-      }
-      
-      // 获取统计数据
-      const totalDemands = await Demand.countDocuments();
-      const newDemands = await Demand.countDocuments({ status: 'new' });
-      const processedDemands = await Demand.countDocuments({ consumedByDemandAgent: true });
-      const pendingDemands = await Demand.countDocuments({ status: 'pending' });
-      
-      return res.json({
-        success: true,
-        detail: {
-          config: agent,
-          inputStats: { 
-            total: totalDemands, 
-            new: newDemands, 
-            pending: pendingDemands,
-            processed: processedDemands 
-          },
-          outputStats: { total: processedDemands, completed: pendingDemands }
-        }
+    // 首先尝试通过 id 查找智能体
+    let agent = await Agent.findOne({ id: key });
+    
+    // 如果没找到，尝试通过旧字段 key/role 查找（兼容旧数据）
+    if (!agent) {
+      agent = await Agent.findOne({ 
+        $or: [
+          { key: key },
+          { role: key }
+        ]
       });
     }
     
-    if (key === 'output') {
-      return res.json({
-        success: true,
-        detail: {
-          config: {
-            id: 'output',
-            name: '输出',
-            role: 'output',
-            description: '已完成的需求输出',
-            modelId: '-',
-            prompt: '',
-            temperature: 0,
-            maxTokens: 0,
-            enabled: true
-          },
-          inputStats: { total: 0, pending: 0, consumed: 0 },
-          outputStats: { total: 0, completed: 0 }
-        }
+    if (!agent) {
+      return res.status(404).json({ 
+        success: false, 
+        error: '智能体不存在' 
       });
     }
-    
-    const roleMap = {
-      organizer: { modelRole: 'organizer', inputModel: 'Demand', outputModel: 'KeyPoint', inputField: 'consumedByKeyPoint', outputField: 'consumedByKnowledgeTree' },
-      architect: { modelRole: 'architect', inputModel: 'KeyPoint', outputModel: 'KnowledgeTree', inputField: 'consumedByKnowledgeTree', outputField: 'consumedByCardPlan' },
-      planner: { modelRole: 'planner', inputModel: 'KnowledgeTree', outputModel: 'CardPlan', inputField: 'consumedByCardPlan', outputField: 'consumedByCardGenerator' },
-      generator: { modelRole: 'generator', inputModel: 'CardPlan', outputModel: 'Demand', inputField: 'consumedByCardGenerator', outputField: null }
-    };
-    
-    const config = roleMap[key];
-    if (!config) {
-      return res.status(400).json({ success: false, error: '无效的智能体标识' });
-    }
-    
-    // 获取智能体配置
-    const agent = await Agent.findOne({ role: config.modelRole, enabled: true });
     
     // 获取统计数据
-    let inputStats = {}, outputStats = {}, currentData = [];
-    
-    if (config.inputModel === 'Demand') {
-      inputStats = {
-        total: await Demand.countDocuments({ status: 'processing' }),
-        pending: await Demand.countDocuments({ status: 'processing', [config.inputField]: false }),
-        consumed: await Demand.countDocuments({ [config.inputField]: true })
-      };
-      currentData = await Demand.find({ status: 'processing', [config.inputField]: false }).limit(5).sort({ createdAt: -1 });
-    } else if (config.inputModel === 'KeyPoint') {
-      inputStats = {
-        total: await KeyPoint.countDocuments({ status: 'completed' }),
-        pending: await KeyPoint.countDocuments({ status: 'completed', [config.inputField]: false }),
-        consumed: await KeyPoint.countDocuments({ [config.inputField]: true })
-      };
-      currentData = await KeyPoint.find({ status: 'completed', [config.inputField]: false }).limit(5).sort({ createdAt: -1 });
-    } else if (config.inputModel === 'KnowledgeTree') {
-      inputStats = {
-        total: await KnowledgeTree.countDocuments({ status: 'completed' }),
-        pending: await KnowledgeTree.countDocuments({ status: 'completed', [config.inputField]: false }),
-        consumed: await KnowledgeTree.countDocuments({ [config.inputField]: true })
-      };
-      currentData = await KnowledgeTree.find({ status: 'completed', [config.inputField]: false }).limit(5).sort({ createdAt: -1 });
-    } else if (config.inputModel === 'CardPlan') {
-      inputStats = {
-        total: await CardPlan.countDocuments({ status: 'completed' }),
-        pending: await CardPlan.countDocuments({ status: 'completed', [config.inputField]: false }),
-        consumed: await CardPlan.countDocuments({ [config.inputField]: true })
-      };
-      currentData = await CardPlan.find({ status: 'completed', [config.inputField]: false }).limit(5).sort({ createdAt: -1 });
-    }
-    
-    if (config.outputModel === 'KeyPoint') {
-      outputStats = {
-        total: await KeyPoint.countDocuments(),
-        completed: await KeyPoint.countDocuments({ status: 'completed' })
-      };
-    } else if (config.outputModel === 'KnowledgeTree') {
-      outputStats = {
-        total: await KnowledgeTree.countDocuments(),
-        completed: await KnowledgeTree.countDocuments({ status: 'completed' })
-      };
-    } else if (config.outputModel === 'CardPlan') {
-      outputStats = {
-        total: await CardPlan.countDocuments(),
-        completed: await CardPlan.countDocuments({ status: 'completed' }),
-        totalCards: await CardPlan.aggregate([{ $group: { _id: null, total: { $sum: '$totalCards' } } }])
-      };
-    }
+    const inputStats = { total: 0, pending: 0, consumed: 0 };
+    const outputStats = { total: 0, completed: 0 };
     
     res.json({
       success: true,
       detail: {
-        config: agent ? {
-          id: agent.id,
-          name: agent.name,
-          role: agent.role,
-          description: agent.description,
-          modelId: agent.modelId,
-          prompt: agent.prompt,
-          temperature: agent.temperature,
-          maxTokens: agent.maxTokens,
-          capabilities: agent.capabilities,
-          enabled: agent.enabled
-        } : null,
+        config: agent,
         inputStats,
         outputStats,
-        currentData: currentData.map(d => ({
-          id: d.id,
-          status: d.status,
-          summary: d.summary || d.tree?.root || d.plans?.[0]?.title || '-',
-          createdAt: d.createdAt
-        }))
+        currentData: []
       }
     });
   } catch (error) {

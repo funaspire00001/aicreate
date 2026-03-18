@@ -42,9 +42,9 @@ const routes = [
     component: () => import('../views/DemandList.vue')
   },
   {
-    path: '/workflows',
-    name: 'WorkflowManagement',
-    component: () => import('../views/WorkflowManagement.vue')
+    path: '/workspaces',
+    name: 'WorkspaceManagement',
+    component: () => import('../views/WorkspaceManagement.vue')
   },
   {
     path: '/agent-monitor',

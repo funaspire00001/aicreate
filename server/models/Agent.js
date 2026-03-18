@@ -3,12 +3,6 @@ import mongoose from 'mongoose';
 const agentSchema = new mongoose.Schema({
   // ========== 基础信息 ==========
   id: { type: String, required: true, unique: true },
-  key: { 
-    type: String, 
-    required: true, 
-    unique: true,
-    enum: ['demand', 'organizer', 'architect', 'planner', 'generator', 'output']
-  },
   name: { type: String, required: true },
   type: {
     type: String,

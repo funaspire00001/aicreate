@@ -3,7 +3,10 @@
     <div class="agent-modal">
       <div class="modal-header">
         <span class="modal-title">{{ agentName }} - 详情配置</span>
-        <button class="close-btn" @click="$emit('close')">✕</button>
+        <div class="header-actions">
+          <button v-if="canDelete" class="btn-delete-header" @click="confirmDelete" title="删除智能体">🗑️</button>
+          <button class="close-btn" @click="$emit('close')">✕</button>
+        </div>
       </div>
       
       <!-- Tab切换 -->
@@ -45,9 +48,9 @@
                   <span class="config-label">类型</span>
                   <span class="config-value">{{ agentConfig.type || 'processor' }}</span>
                 </div>
-                <div class="config-row">
+                <div class="config-row textarea-row">
                   <span class="config-label">描述</span>
-                  <input v-model="editForm.description" class="config-input" placeholder="功能描述" />
+                  <textarea v-model="editForm.description" class="config-textarea" placeholder="功能描述" rows="3"></textarea>
                 </div>
                 <div class="config-row">
                   <span class="config-label">启用状态</span>
@@ -334,7 +337,7 @@ const props = defineProps({
   agentName: { type: String, required: true }
 })
 
-const emit = defineEmits(['close', 'update'])
+const emit = defineEmits(['close', 'update', 'delete'])
 
 const API_URL = 'http://localhost:3001/api'
 
@@ -345,6 +348,11 @@ const statusText = {
   completed: '已完成',
   failed: '失败'
 }
+
+// 是否可以删除（demand和output是系统内置，不可删除）
+const canDelete = computed(() => {
+  return !['demand', 'output'].includes(props.agentKey)
+})
 
 // 状态
 const activeTab = ref('config')
@@ -458,6 +466,31 @@ const saveConfig = async () => {
   } catch (err) {
     console.error('保存失败:', err)
     alert('保存失败')
+  }
+}
+
+// 确认删除
+const confirmDelete = async () => {
+  if (!confirm(`确定要删除智能体「${props.agentName}」吗？此操作不可恢复。`)) return
+  
+  const agentId = agentConfig.value?.id
+  if (!agentId) return
+  
+  try {
+    const res = await fetch(`${API_URL}/agents/${agentId}`, {
+      method: 'DELETE'
+    })
+    const data = await res.json()
+    if (data.success) {
+      alert('删除成功！')
+      emit('delete')
+      emit('close')
+    } else {
+      alert('删除失败: ' + data.error)
+    }
+  } catch (err) {
+    console.error('删除失败:', err)
+    alert('删除失败')
   }
 }
 
@@ -661,6 +694,26 @@ onMounted(() => {
   color: #333;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-delete-header {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.btn-delete-header:hover {
+  background: #fff1f0;
+}
+
 .close-btn {
   background: none;
   border: none;
@@ -718,12 +771,10 @@ onMounted(() => {
 /* 配置面板 */
 .config-pane {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  flex-direction: column;
 }
 
 .config-header {
-  width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -817,7 +868,6 @@ onMounted(() => {
 
 .config-input {
   flex: 1;
-  max-width: 300px;
   padding: 8px 12px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
@@ -831,18 +881,43 @@ onMounted(() => {
 }
 
 .config-input.small {
-  width: 100px;
-  max-width: 100px;
+  width: 120px;
+  flex: none;
 }
 
 .config-select {
   flex: 1;
-  max-width: 300px;
   padding: 8px 12px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
   font-size: 13px;
   background: white;
+}
+
+.config-textarea {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+  transition: border-color 0.2s;
+}
+
+.config-textarea:focus {
+  border-color: #1890ff;
+  outline: none;
+}
+
+.config-row.textarea-row {
+  align-items: flex-start;
+  padding-top: 12px;
+}
+
+.config-row.textarea-row .config-label {
+  padding-top: 8px;
 }
 
 .input-with-unit {

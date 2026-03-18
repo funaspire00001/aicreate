@@ -18,17 +18,25 @@ import { v4 as uuidv4 } from 'uuid';
 
 const POLL_INTERVAL = 5000; // 5秒轮询
 
-// 智能体状态追踪
-const agentStatus = {
-  demand: { status: 'idle', currentTask: null, lastRun: null, stats: { total: 0, success: 0, failed: 0 } },
-  organizer: { status: 'idle', currentTask: null, lastRun: null, stats: { total: 0, success: 0, failed: 0 } },
-  architect: { status: 'idle', currentTask: null, lastRun: null, stats: { total: 0, success: 0, failed: 0 } },
-  planner: { status: 'idle', currentTask: null, lastRun: null, stats: { total: 0, success: 0, failed: 0 } },
-  generator: { status: 'idle', currentTask: null, lastRun: null, stats: { total: 0, success: 0, failed: 0 } },
-  output: { status: 'idle', currentTask: null, lastRun: null, stats: { total: 0, success: 0, failed: 0 } }
-};
+// 默认智能体状态
+const defaultStatus = () => ({ 
+  status: 'idle', 
+  currentTask: null, 
+  lastRun: null, 
+  stats: { total: 0, success: 0, failed: 0 } 
+});
 
-// 获取智能体状态（供外部调用）
+// 智能体状态追踪（使用 Proxy 自动创建）
+const agentStatus = new Proxy({}, {
+  get(target, prop) {
+    if (!target[prop]) {
+      target[prop] = defaultStatus();
+    }
+    return target[prop];
+  }
+});
+
+// 导出获取状态的函数
 export function getAgentStatus() {
   return agentStatus;
 }
@@ -157,12 +165,18 @@ async function failProcessing(inputRecord, errorMsg, duration = 0) {
 async function runDemandAgent() {
   const agentKey = 'demand';
   const agentName = '需求智能体';
+  const status = agentStatus[agentKey];
   
-  if (agentStatus.demand.status === 'running') return;
+  if (status.status === 'running') return;
   
   try {
-    // 获取智能体配置
-    const agent = await Agent.findOne({ key: 'demand', enabled: true });
+    // 获取智能体配置（支持旧的 key 字段或 type 字段）
+    const agent = await Agent.findOne({ 
+      $or: [
+        { key: 'demand', enabled: true },
+        { type: 'source', enabled: true }
+      ]
+    });
     if (!agent) return;
     
     // 查找新用户输入（status=new 的需求）
@@ -808,22 +822,19 @@ async function runGeneratorAgent() {
 }
 
 // ============================================
-// 动态调度器 - 支持配置即时生效
+// 动态调度器 - 从数据库读取智能体配置
 // ============================================
-let schedulerTimers = {
-  demand: null,
-  organizer: null,
-  architect: null,
-  planner: null,
-  generator: null
-};
+let schedulerTimers = {};  // 动态存储定时器
 
 // 每个智能体独立调度
-async function scheduleAgent(agentKey, runFunc) {
+async function scheduleAgent(agentId, runFunc) {
   // 获取最新配置
-  const agent = await Agent.findOne({ 
-    $or: [{ key: agentKey }, { role: agentKey }] 
-  });
+  const agent = await Agent.findOne({ id: agentId });
+  
+  if (!agent) {
+    console.log(`[调度器] 智能体 ${agentId} 不存在，跳过调度`);
+    return;
+  }
   
   // 默认间隔5秒
   const interval = agent?.schedule?.interval || 5000;
@@ -831,8 +842,8 @@ async function scheduleAgent(agentKey, runFunc) {
   
   // 如果禁用，延迟后重新检查
   if (!enabled) {
-    schedulerTimers[agentKey] = setTimeout(() => {
-      scheduleAgent(agentKey, runFunc);
+    schedulerTimers[agentId] = setTimeout(() => {
+      scheduleAgent(agentId, runFunc);
     }, interval);
     return;
   }
@@ -841,20 +852,29 @@ async function scheduleAgent(agentKey, runFunc) {
   try {
     await runFunc();
   } catch (err) {
-    console.error(`[${agentKey}] 执行错误:`, err);
+    console.error(`[${agentId}] 执行错误:`, err);
   }
   
   // 执行完成后，重新调度（此时会读取最新配置）
-  schedulerTimers[agentKey] = setTimeout(() => {
-    scheduleAgent(agentKey, runFunc);
+  schedulerTimers[agentId] = setTimeout(() => {
+    scheduleAgent(agentId, runFunc);
   }, interval);
 }
 
-// 启动所有智能体
-export function startAgentScheduler() {
+// 启动所有智能体（从数据库动态加载）
+export async function startAgentScheduler() {
   console.log('智能体调度器启动（动态配置模式）');
   
-  // 启动各智能体
+  // 清除旧的定时器
+  stopAgentScheduler();
+  
+  // 从数据库获取所有启用的智能体
+  const agents = await Agent.find({ enabled: true });
+  
+  console.log(`[调度器] 发现 ${agents.length} 个智能体`);
+  
+  // TODO: 后续根据智能体类型分配对应的执行函数
+  // 目前暂时只启动固定的几个智能体
   scheduleAgent('demand', runDemandAgent);
   scheduleAgent('organizer', runOrganizerAgent);
   scheduleAgent('architect', runArchitectAgent);
@@ -867,44 +887,20 @@ export function stopAgentScheduler() {
   Object.keys(schedulerTimers).forEach(key => {
     if (schedulerTimers[key]) {
       clearTimeout(schedulerTimers[key]);
-      schedulerTimers[key] = null;
     }
   });
+  schedulerTimers = {};
 }
 
 // 重启单个智能体（配置变更时调用）
-export function restartAgent(agentKey) {
-  const runFuncMap = {
-    demand: runDemandAgent,
-    organizer: runOrganizerAgent,
-    architect: runArchitectAgent,
-    planner: runPlannerAgent,
-    generator: runGeneratorAgent
-  };
-  
-  // 清除当前定时器
-  if (schedulerTimers[agentKey]) {
-    clearTimeout(schedulerTimers[agentKey]);
-    schedulerTimers[agentKey] = null;
+export function restartAgent(agentId) {
+  // 清除该智能体的定时器
+  if (schedulerTimers[agentId]) {
+    clearTimeout(schedulerTimers[agentId]);
+    schedulerTimers[agentId] = null;
   }
-  
-  // 立即重新调度
-  const runFunc = runFuncMap[agentKey];
-  if (runFunc) {
-    scheduleAgent(agentKey, runFunc);
-  }
+  console.log(`[调度器] 智能体 ${agentId} 将在下一周期自动应用新配置`);
 }
-
-// 兼容旧接口
-function runAllAgents() {
-  runDemandAgent().catch(console.error);
-  runOrganizerAgent().catch(console.error);
-  runArchitectAgent().catch(console.error);
-  runPlannerAgent().catch(console.error);
-  runGeneratorAgent().catch(console.error);
-}
-
-export { agentStatus };
 
 // 获取智能体输入输出统计
 export async function getAgentDataStats(agentKey) {

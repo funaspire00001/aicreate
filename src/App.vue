@@ -3,7 +3,7 @@
     <div class="app-container">
       <nav class="sidebar">
         <div class="sidebar-header">
-          <div class="logo">AI Card Manager</div>
+          <div class="logo">AI Creator Space</div>
         </div>
         <div class="nav-links">
           <router-link to="/" class="nav-item">
@@ -12,6 +12,10 @@
           </router-link>
           
           <div class="nav-group-title">AI 能力</div>
+          <router-link to="/workspaces" class="nav-item">
+            <span class="nav-icon">🏢</span>
+            <span class="nav-text">空间管理</span>
+          </router-link>
           <router-link to="/agents" class="nav-item">
             <span class="nav-icon">👥</span>
             <span class="nav-text">智能体管理</span>
@@ -40,10 +44,6 @@
           </router-link>
           
           <div class="nav-group-title">系统</div>
-          <router-link to="/workflows" class="nav-item">
-            <span class="nav-icon">⚙️</span>
-            <span class="nav-text">工作流管理</span>
-          </router-link>
           <router-link to="/data" class="nav-item">
             <span class="nav-icon">🗄️</span>
             <span class="nav-text">数据管理</span>

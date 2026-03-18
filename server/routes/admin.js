@@ -5,14 +5,13 @@ import mongoose from 'mongoose';
 
 // 导入所有模型
 import Agent from '../models/Agent.js';
-import Workflow from '../models/Workflow.js';
-import WorkflowExecution from '../models/WorkflowExecution.js';
 import Demand from '../models/Demand.js';
 import LocalCard from '../models/LocalCard.js';
 import Knowledge from '../models/Knowledge.js';
 import Request from '../models/Request.js';
 import StepLog from '../models/StepLog.js';
 import AgentRun from '../models/AgentRun.js';
+import Workspace from '../models/Workspace.js';
 
 // 注册 Mongoose 适配器
 AdminJS.registerAdapter({ Database, Resource });
@@ -27,26 +26,10 @@ export const createAdminRouter = async () => {
         resource: Agent,
         options: {
           navigation: { name: '核心模块', icon: 'User' },
-          listProperties: ['id', 'name', 'role', 'modelId', 'enabled', 'createdAt'],
-          filterProperties: ['role', 'enabled', 'modelId'],
-          editProperties: ['name', 'role', 'description', 'modelId', 'prompt', 'temperature', 'maxTokens', 'enabled', 'capabilities'],
-          showProperties: ['id', 'name', 'role', 'description', 'modelId', 'prompt', 'temperature', 'maxTokens', 'enabled', 'capabilities', 'stats', 'createdAt', 'updatedAt'],
-        },
-      },
-      {
-        resource: Workflow,
-        options: {
-          navigation: { name: '核心模块', icon: 'Flow' },
-          listProperties: ['id', 'name', 'trigger', 'enabled', 'lastStatus', 'createdAt'],
-          filterProperties: ['trigger', 'enabled', 'lastStatus'],
-        },
-      },
-      {
-        resource: WorkflowExecution,
-        options: {
-          navigation: { name: '执行记录', icon: 'Play' },
-          listProperties: ['id', 'workflowName', 'status', 'triggeredBy', 'startTime', 'duration'],
-          filterProperties: ['status', 'workflowId', 'triggeredBy'],
+          listProperties: ['id', 'name', 'type', 'modelId', 'enabled', 'createdAt'],
+          filterProperties: ['type', 'enabled', 'modelId'],
+          editProperties: ['name', 'type', 'description', 'ai', 'schedule', 'enabled'],
+          showProperties: ['id', 'name', 'type', 'description', 'ai', 'schedule', 'enabled', 'createdAt', 'updatedAt'],
         },
       },
       {
@@ -94,6 +77,15 @@ export const createAdminRouter = async () => {
           navigation: { name: '执行记录', icon: 'Activity' },
           listProperties: ['agentName', 'status', 'createdAt'],
           filterProperties: ['status', 'agentName'],
+        },
+      },
+      {
+        resource: Workspace,
+        options: {
+          navigation: { name: '核心模块', icon: 'Layer' },
+          listProperties: ['id', 'name', 'description', 'isDefault', 'createdAt'],
+          filterProperties: ['isDefault'],
+          editProperties: ['name', 'description', 'agents', 'isDefault'],
         },
       },
     ],

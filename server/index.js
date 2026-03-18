@@ -14,9 +14,9 @@ import statusRoutes from './routes/status.js';
 import generateRoutes from './routes/generate.js';
 import localCardsRoutes from './routes/localCards.js';
 import modelsRoutes from './routes/models.js';
-import workflowsRoutes from './routes/workflows.js';
 import demandsRoutes from './routes/demands.js';
 import dataManagerRoutes from './routes/dataManager.js';
+import workspaceRoutes from './routes/workspaces.js';
 import { createAdminRouter } from './routes/admin.js';
 
 import { startScheduler } from './services/scheduler.js';
@@ -45,9 +45,9 @@ app.use('/api/status', statusRoutes);
 app.use('/api/generate', generateRoutes);
 app.use('/api/local-cards', localCardsRoutes);
 app.use('/api/models', modelsRoutes);
-app.use('/api/workflows', workflowsRoutes);
 app.use('/api/demands', demandsRoutes);
 app.use('/api/data', dataManagerRoutes);
+app.use('/api/workspaces', workspaceRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {

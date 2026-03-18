@@ -42,24 +42,27 @@
     <!-- 下方：智能体工作空间 -->
     <div class="workspace-section">
       <div class="section-header">
-        <h2>智能体工作空间</h2>
+        <div class="workspace-info">
+          <h2>{{ currentWorkspace?.name || '默认空间' }}</h2>
+          <span class="workspace-meta">{{ workspaceAgents.length }} 个智能体</span>
+        </div>
         <div class="workspace-controls">
+          <button @click="goToWorkspaceManagement" class="switch-btn">
+            切换空间
+          </button>
+          <button @click="showAddAgentModal = true" class="add-btn">
+            + 添加智能体
+          </button>
           <button @click="autoRun" class="run-btn" :disabled="isRunning" :class="{ running: isRunning }">
             {{ isRunning ? '运行中...' : '启动处理' }}
           </button>
         </div>
       </div>
 
-      <div class="workspace-stats">
-        <span class="stat"><b>{{ demandStats.pending }}</b> 待处理</span>
-        <span class="stat"><b>{{ demandStats.processing }}</b> 处理中</span>
-        <span class="stat"><b>{{ demandStats.completed }}</b> 已完成</span>
-      </div>
-
       <!-- 工作空间画布 -->
       <div class="workspace-canvas" ref="workspaceCanvas">
         <!-- 连接线 -->
-        <svg class="connection-lines" v-if="showConnections">
+        <svg class="connection-lines" v-if="showConnections && agentWorkstations.length > 0">
           <line 
             v-for="(line, idx) in connectionLines" 
             :key="idx"
@@ -71,45 +74,14 @@
           />
         </svg>
         
-        <!-- 需求工作站 -->
-        <div 
-          :class="['station-card', { active: selectedAgentKey === 'demand', dragging: draggingKey === 'demand' }]"
-          :style="getStationStyle('demand')"
-          @mousedown="startDrag($event, 'demand')"
-          @click.stop="onStationClick('demand')"
-        >
-          <div class="station-drag-handle">⋮⋮</div>
-          <div class="station-header">
-            <div class="station-icon">📋</div>
-            <div class="station-title">需求管理</div>
-          </div>
-          <div class="station-status" :class="demandStats.pending > 0 ? 'has-work' : 'idle'">
-            {{ demandStats.pending > 0 ? '有待处理' : '空闲' }}
-          </div>
-          <div class="station-queue">
-            <div class="queue-item">
-              <span class="queue-label">待处理</span>
-              <span class="queue-value pending">{{ demandStats.pending }}</span>
-            </div>
-            <div class="queue-item">
-              <span class="queue-label">处理中</span>
-              <span class="queue-value processing">{{ demandStats.processing }}</span>
-            </div>
-            <div class="queue-item">
-              <span class="queue-label">已完成</span>
-              <span class="queue-value">{{ demandStats.completed }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 智能体工作站 -->
+        <!-- 智能体工作站（统一渲染所有智能体） -->
         <div 
           v-for="agent in agentWorkstations" 
-          :key="agent.key"
-          :class="['station-card', agent.status, { active: selectedAgentKey === agent.key, dragging: draggingKey === agent.key }]"
-          :style="getStationStyle(agent.key)"
-          @mousedown="startDrag($event, agent.key)"
-          @click.stop="onStationClick(agent.key)"
+          :key="agent.id"
+          :class="['station-card', agent.status, { active: selectedAgentKey === agent.id, dragging: draggingKey === agent.id }]"
+          :style="getStationStyle(agent.id)"
+          @mousedown="startDrag($event, agent.id)"
+          @click.stop="onStationClick(agent.id)"
         >
           <div class="station-drag-handle">⋮⋮</div>
           <div class="station-header">
@@ -125,45 +97,32 @@
             {{ getAgentStatusText(agent.status) }}
           </div>
           <div class="station-queue">
-            <div class="queue-item" v-if="agent.stats?.unconsumed !== undefined">
-              <span class="queue-label">待消费</span>
-              <span class="queue-value pending">{{ agent.stats.unconsumed || 0 }}</span>
-            </div>
-            <div class="queue-item" v-if="agent.stats?.total !== undefined">
-              <span class="queue-label">已处理</span>
-              <span class="queue-value">{{ agent.stats.total || 0 }}</span>
-            </div>
-            <div class="queue-item" v-if="agent.stats?.totalCards !== undefined">
-              <span class="queue-label">生成卡片</span>
-              <span class="queue-value success">{{ agent.stats.totalCards || 0 }}</span>
-            </div>
+            <!-- 普通智能体数据 -->
+            <template>
+              <div class="queue-item" v-if="agent.stats?.unconsumed !== undefined">
+                <span class="queue-label">待消费</span>
+                <span class="queue-value pending">{{ agent.stats.unconsumed || 0 }}</span>
+              </div>
+              <div class="queue-item" v-if="agent.stats?.total !== undefined">
+                <span class="queue-label">已处理</span>
+                <span class="queue-value">{{ agent.stats.total || 0 }}</span>
+              </div>
+              <div class="queue-item" v-if="agent.stats?.totalCards !== undefined">
+                <span class="queue-label">生成卡片</span>
+                <span class="queue-value success">{{ agent.stats.totalCards || 0 }}</span>
+              </div>
+            </template>
           </div>
           <div class="station-current" v-if="agent.currentTask">
             {{ agent.currentTask }}
           </div>
         </div>
-
-        <!-- 输出工作站 -->
-        <div 
-          :class="['station-card output', { active: selectedAgentKey === 'output', dragging: draggingKey === 'output' }]"
-          :style="getStationStyle('output')"
-          @mousedown="startDrag($event, 'output')"
-          @click.stop="onStationClick('output')"
-        >
-          <div class="station-drag-handle">⋮⋮</div>
-          <div class="station-header">
-            <div class="station-icon">📤</div>
-            <div class="station-title">卡片输出</div>
-          </div>
-          <div class="station-status" :class="agentStats.generator?.totalCards > 0 ? 'success' : 'idle'">
-            {{ agentStats.generator?.totalCards > 0 ? '已输出' : '待输出' }}
-          </div>
-          <div class="station-queue">
-            <div class="queue-item">
-              <span class="queue-label">卡片总数</span>
-              <span class="queue-value success">{{ agentStats.generator?.totalCards || 0 }}</span>
-            </div>
-          </div>
+        
+        <!-- 空状态提示 -->
+        <div v-if="agentWorkstations.length === 0" class="empty-workspace">
+          <div class="empty-icon">🤖</div>
+          <p>当前空间暂无智能体</p>
+          <button @click="showAddAgentModal = true" class="add-agent-empty-btn">添加智能体</button>
         </div>
       </div>
 
@@ -173,8 +132,41 @@
         :agentKey="selectedAgentKey"
         :agentName="getAgentDisplayName(selectedAgentKey)"
         @close="selectedAgentKey = ''"
-        @update="fetchAgentStats"
+        @update="onAgentUpdated"
+        @delete="onAgentDeleted"
       />
+    </div>
+
+    <!-- 新建智能体弹窗 -->
+    <div v-if="showAddAgentModal" class="modal-overlay" @click.self="showAddAgentModal = false">
+      <div class="add-agent-modal">
+        <div class="modal-header">
+          <h2>新建智能体</h2>
+          <button class="close-btn" @click="showAddAgentModal = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <label>名称 <span class="required">*</span></label>
+            <input v-model="newAgent.name" class="form-input" placeholder="智能体名称" />
+          </div>
+          <div class="form-row">
+            <label>描述</label>
+            <textarea v-model="newAgent.description" class="form-textarea" placeholder="功能描述"></textarea>
+          </div>
+          <div class="form-row">
+            <label>类型</label>
+            <select v-model="newAgent.type" class="form-select">
+              <option value="source">数据源</option>
+              <option value="processor">处理器</option>
+              <option value="output">输出</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="showAddAgentModal = false" class="btn-cancel">取消</button>
+          <button @click="createAgent" class="btn-confirm" :disabled="!newAgent.name">创建</button>
+        </div>
+      </div>
     </div>
 
     <!-- 步骤详情弹窗 -->
@@ -217,10 +209,63 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { dashboardApi, statusApi } from '../api'
 import AgentDetailModal from '../components/AgentDetailModal.vue'
 
+const router = useRouter()
 const API_URL = 'http://localhost:3001/api'
+
+// 当前空间
+const currentWorkspace = ref(null)
+const workspaceAgents = ref([]) // 当前空间的智能体key列表
+
+// 获取当前空间
+const fetchCurrentWorkspace = async () => {
+  const workspaceId = localStorage.getItem('currentWorkspace')
+  console.log('[仪表盘] ========== 开始获取空间 ==========')
+  console.log('[仪表盘] localStorage.currentWorkspace:', workspaceId)
+  
+  if (!workspaceId) {
+    // 没有选中空间，显示空
+    currentWorkspace.value = null
+    workspaceAgents.value = []
+    console.log('[仪表盘] 无选中空间')
+    return
+  }
+  
+  try {
+    const url = `${API_URL}/workspaces/${workspaceId}`
+    console.log('[仪表盘] 请求URL:', url)
+    const res = await fetch(url)
+    const data = await res.json()
+    console.log('[仪表盘] API返回完整数据:', JSON.stringify(data, null, 2))
+    
+    if (data.success && data.workspace) {
+      console.log('[仪表盘] 获取到空间:', data.workspace.name, 'ID:', data.workspace.id)
+      console.log('[仪表盘] 空间的 agentIds 字段:', data.workspace.agentIds)
+      
+      currentWorkspace.value = data.workspace
+      // 直接使用空间的 agentIds，空就空着
+      workspaceAgents.value = data.workspace.agentIds || []
+      console.log('[仪表盘] 最终设置的 workspaceAgents:', workspaceAgents.value)
+    } else {
+      // 空间不存在，清除 localStorage
+      console.log('[仪表盘] 空间不存在')
+      localStorage.removeItem('currentWorkspace')
+      currentWorkspace.value = null
+      workspaceAgents.value = []
+    }
+  } catch (err) {
+    console.error('[仪表盘] 获取空间失败:', err)
+    workspaceAgents.value = []
+  }
+}
+
+// 跳转到空间管理
+const goToWorkspaceManagement = () => {
+  router.push('/workspaces')
+}
 
 // 状态
 const backendStatus = ref('checking')
@@ -239,13 +284,8 @@ const stats = ref({
   recentRequests: []
 })
 
-// 智能体独立状态
-const agentStatus = ref({
-  organizer: { status: 'idle', currentTask: null, lastRun: null },
-  architect: { status: 'idle', currentTask: null, lastRun: null },
-  planner: { status: 'idle', currentTask: null, lastRun: null },
-  generator: { status: 'idle', currentTask: null, lastRun: null }
-})
+// 智能体独立状态（动态从API获取）
+const agentStatus = ref({})
 
 // ========== 拖拽相关 ==========
 const workspaceCanvas = ref(null)
@@ -256,44 +296,62 @@ const showConnections = ref(true)
 const isActuallyDragging = ref(false) // 是否真的发生了拖拽（移动距离超过阈值）
 const DRAG_THRESHOLD = 5 // 拖拽阈值（像素）
 
-// 工作站默认位置配置
-const defaultPositions = {
-  demand: { x: 20, y: 20 },
-  organizer: { x: 240, y: 20 },
-  architect: { x: 460, y: 20 },
-  planner: { x: 240, y: 220 },
-  generator: { x: 460, y: 220 },
-  output: { x: 680, y: 220 }
-}
-
 // 工作站位置状态
 const stationPositions = ref({})
 
-// 初始化位置（从localStorage恢复或使用默认值）
+// 初始化位置（从localStorage恢复）
 const initPositions = () => {
-  const saved = localStorage.getItem('workspace_positions')
+  const saved = localStorage.getItem('workspace_positions_v2')  // 使用新key避免旧数据冲突
   if (saved) {
     try {
       stationPositions.value = JSON.parse(saved)
     } catch {
-      stationPositions.value = { ...defaultPositions }
+      stationPositions.value = {}
     }
   } else {
-    stationPositions.value = { ...defaultPositions }
+    stationPositions.value = {}
   }
 }
 
 // 保存位置到localStorage
 const savePositions = () => {
-  localStorage.setItem('workspace_positions', JSON.stringify(stationPositions.value))
+  localStorage.setItem('workspace_positions_v2', JSON.stringify(stationPositions.value))
 }
 
 // 获取工作站样式
-const getStationStyle = (key) => {
-  const pos = stationPositions.value[key] || defaultPositions[key] || { x: 0, y: 0 }
+const getStationStyle = (agentId) => {
+  console.log('[仪表盘] getStationStyle agentId:', agentId)
+  console.log('[仪表盘] stationPositions:', JSON.stringify(stationPositions.value))
+  
+  // 如果已有位置，直接返回
+  if (stationPositions.value[agentId]) {
+    const pos = stationPositions.value[agentId]
+    console.log('[仪表盘] 使用已存储位置:', pos)
+    return {
+      left: `${pos.x}px`,
+      top: `${pos.y}px`
+    }
+  }
+  
+  // 新智能体：根据已有数量计算位置（网格排列）
+  const existingCount = Object.keys(stationPositions.value).length
+  const cols = 3  // 每行3个
+  const row = Math.floor(existingCount / cols)
+  const col = existingCount % cols
+  const newPos = {
+    x: 20 + col * 220,
+    y: 20 + row * 200
+  }
+  
+  console.log('[仪表盘] 计算新位置:', newPos, 'existingCount:', existingCount)
+  
+  // 保存新位置
+  stationPositions.value[agentId] = newPos
+  savePositions()
+  
   return {
-    left: `${pos.x}px`,
-    top: `${pos.y}px`
+    left: `${newPos.x}px`,
+    top: `${newPos.y}px`
   }
 }
 
@@ -366,39 +424,19 @@ const onStationClick = (key) => {
 
 // 连接线计算
 const connectionLines = computed(() => {
-  const lines = []
-  const flow = ['demand', 'organizer', 'architect', 'planner', 'generator', 'output']
-  
-  for (let i = 0; i < flow.length - 1; i++) {
-    const from = stationPositions.value[flow[i]] || defaultPositions[flow[i]]
-    const to = stationPositions.value[flow[i + 1]] || defaultPositions[flow[i + 1]]
-    
-    if (from && to) {
-      lines.push({
-        x1: from.x + 90,
-        y1: from.y + 90,
-        x2: to.x + 90,
-        y2: to.y + 90
-      })
-    }
-  }
-  
-  return lines
+  // 连接线功能暂时禁用，因为智能体现在是动态的
+  // 未来可以根据智能体的输入输出关系动态生成连接线
+  return []
 })
 
 // 重置位置
 const resetPositions = () => {
-  stationPositions.value = { ...defaultPositions }
+  stationPositions.value = {}
   savePositions()
 }
 
-// 智能体数据统计
-const agentStats = ref({
-  organizer: { total: 0, completed: 0, unconsumed: 0 },
-  architect: { total: 0, completed: 0, unconsumed: 0 },
-  planner: { total: 0, completed: 0, unconsumed: 0, totalCards: 0 },
-  generator: { totalCards: 0, pending: 0 }
-})
+// 智能体数据统计（动态从API获取）
+const agentStats = ref({})
 
 // 当前选中的智能体（用于筛选日志）
 const selectedAgentKey = ref('')
@@ -410,57 +448,77 @@ const availableModels = ref([])
 const dataList = ref([])
 const dataLoading = ref(false)
 
-let refreshTimer = null
-
-// 流水线步骤 - 基于智能体实时状态和统计数据
-const pipelineSteps = computed(() => {
-  const agents = [
-    { key: 'organizer', name: '信息整理', agentName: '信息整理智能体', dataLabel: '关键点' },
-    { key: 'architect', name: '知识树构建', agentName: '知识树构建智能体', dataLabel: '知识树' },
-    { key: 'planner', name: '卡片规划', agentName: '卡片规划智能体', dataLabel: '规划' },
-    { key: 'generator', name: '卡片生成', agentName: '卡片生成智能体', dataLabel: '卡片' }
-  ]
-  
-  return agents.map(agent => {
-    const status = agentStatus.value[agent.key]
-    const stats = agentStats.value[agent.key]
-    const stepStatus = status.status === 'running' ? 'running' :
-                       status.status === 'failed' ? 'failed' :
-                       status.status === 'idle' && status.lastRun ? 'success' : 'pending'
-    
-    return {
-      ...agent,
-      status: stepStatus,
-      currentTask: status.currentTask,
-      lastRun: status.lastRun,
-      stats: stats
-    }
-  })
+// 新建智能体
+const showAddAgentModal = ref(false)
+const newAgent = ref({
+  name: '',
+  description: '',
+  type: 'processor'
 })
 
-// 智能体工作站列表
+let refreshTimer = null
+
+// 智能体配置（从后端获取）
+const agentConfigs = ref({})
+
+// 获取智能体配置
+const fetchAgentConfigs = async () => {
+  try {
+    const res = await fetch(`${API_URL}/agents`)
+    const data = await res.json()
+    if (data.success && data.agents) {
+      // 按 id 建立索引
+      const configs = {}
+      data.agents.forEach(agent => {
+        if (agent.id) {
+          configs[agent.id] = agent
+        }
+      })
+      agentConfigs.value = configs
+    }
+  } catch (err) {
+    console.error('获取智能体配置失败:', err)
+  }
+}
+
+// 默认图标（统一使用机器人图标）
+const defaultIcon = '🤖'
+
+// 智能体工作站列表（根据当前空间过滤）
 const agentWorkstations = computed(() => {
-  const workstations = [
-    { key: 'organizer', name: '信息整理', icon: '🔍' },
-    { key: 'architect', name: '知识树构建', icon: '🌳' },
-    { key: 'planner', name: '卡片规划', icon: '📐' },
-    { key: 'generator', name: '卡片生成', icon: '🎨' }
-  ]
+  console.log('[仪表盘] ========== computed 重新计算 ==========')
+  console.log('[仪表盘] currentWorkspace:', currentWorkspace.value?.name)
+  console.log('[仪表盘] workspaceAgents:', workspaceAgents.value)
+  console.log('[仪表盘] workspaceAgents.length:', workspaceAgents.value.length)
+  console.log('[仪表盘] agentConfigs keys:', Object.keys(agentConfigs.value))
   
-  return workstations.map(ws => {
-    const status = agentStatus.value[ws.key]
-    const stats = agentStats.value[ws.key]
+  // 直接使用 workspaceAgents（现在是 agentIds），空就是空
+  const agentIds = workspaceAgents.value
+  
+  console.log('[仪表盘] 显示的智能体IDs:', agentIds)
+  
+  const result = agentIds.map(agentId => {
+    const status = agentStatus.value[agentId] || { status: 'idle' }
+    const stats = agentStats.value[agentId]
+    const config = agentConfigs.value[agentId]
+    console.log('[仪表盘] 智能体', agentId, '配置:', config)
     const wsStatus = status.status === 'running' ? 'running' :
                      status.status === 'failed' ? 'failed' :
                      status.status === 'idle' && status.lastRun ? 'success' : 'idle'
     
     return {
-      ...ws,
+      id: agentId,
+      icon: defaultIcon,
+      name: config?.name || agentId,
+      type: config?.type || 'processor',
       status: wsStatus,
       currentTask: status.currentTask,
       stats: stats
     }
   })
+  
+  console.log('[仪表盘] 最终工作站列表长度:', result.length)
+  return result
 })
 
 // 获取智能体状态文本
@@ -474,12 +532,9 @@ const getAgentStatusText = (status) => {
   return map[status] || status
 }
 
-const getArrowColor = (step, index) => {
-  if (step.status === 'success' || step.status === 'running') return '#667eea'
-  if (index > 0) {
-    const prevStep = pipelineSteps.value[index - 1]
-    if (prevStep.status === 'success') return '#667eea'
-  }
+// 获取箭头颜色（保留用于未来可能的流水线展示）
+const getArrowColor = (status) => {
+  if (status === 'success' || status === 'running') return '#667eea'
   return '#d9d9d9'
 }
 
@@ -902,17 +957,93 @@ const deleteData = async (id) => {
   }
 }
 
+// 创建智能体
+const createAgent = async () => {
+  if (!newAgent.value.name) return
+  
+  try {
+    const res = await fetch(`${API_URL}/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: newAgent.value.name,
+        description: newAgent.value.description,
+        type: newAgent.value.type,
+        prompt: '请配置智能体的提示词...',
+        modelId: 'ollama-qwen',
+        temperature: 0.7,
+        maxTokens: 4096,
+        enabled: true
+      })
+    })
+    const data = await res.json()
+    if (data.success) {
+      const agentId = data.agent.id
+      
+      // 如果当前有选中空间，将智能体添加到空间
+      if (currentWorkspace.value) {
+        const updatedAgentIds = [...workspaceAgents.value, agentId]
+        await fetch(`${API_URL}/workspaces/${currentWorkspace.value.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentIds: updatedAgentIds })
+        })
+      }
+      
+      showAddAgentModal.value = false
+      newAgent.value = { name: '', description: '', type: 'processor' }
+      fetchAgentConfigs()
+      fetchAgentStatus()
+      fetchCurrentWorkspace() // 刷新当前空间
+      alert('智能体创建成功！')
+    } else {
+      alert('创建失败: ' + data.error)
+    }
+  } catch (err) {
+    console.error('创建智能体失败:', err)
+    alert('创建失败')
+  }
+}
+
+// 智能体更新回调
+const onAgentUpdated = () => {
+  fetchAgentConfigs()
+  fetchAgentStats()
+}
+
+// 智能体删除回调
+const onAgentDeleted = () => {
+  selectedAgentKey.value = ''
+  fetchAgentConfigs()
+  fetchAgentStatus()
+  fetchAgentStats()
+}
+
 // 获取显示名称
 const getAgentDisplayName = (key) => {
+  // 优先使用配置中的名称
+  if (agentConfigs.value[key]?.name) {
+    return agentConfigs.value[key].name
+  }
+  // 默认名称
   const map = {
     demand: '需求管理',
-    organizer: '信息整理智能体',
-    architect: '知识树构建智能体',
-    planner: '卡片规划智能体',
-    generator: '卡片生成智能体',
-    output: '完成输出'
+    output: '卡片输出'
   }
   return map[key] || key
+}
+
+// 获取智能体图标
+const getAgentIcon = (key) => {
+  const map = {
+    demand: '📋',
+    organizer: '🔍',
+    architect: '🌳',
+    planner: '📐',
+    generator: '🎨',
+    output: '📤'
+  }
+  return map[key] || '🤖'
 }
 
 onMounted(() => {
@@ -921,11 +1052,15 @@ onMounted(() => {
   fetchWorkflows()
   fetchDemandStats()
   fetchDashboardStats()
+  fetchCurrentWorkspace() // 获取当前空间
+  fetchAgentConfigs() // 获取智能体配置（名称等）
   fetchAgentStatus()
   fetchAgentStats()
   
   refreshTimer = setInterval(() => {
     fetchDemandStats()
+    fetchCurrentWorkspace() // 定期刷新当前空间
+    fetchAgentConfigs() // 定期刷新配置
     fetchAgentStatus()
     fetchAgentStats()
     // 如果选中了智能体，刷新其详情
@@ -1078,6 +1213,59 @@ onUnmounted(() => {
   gap: 12px;
 }
 
+.workspace-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspace-info h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.workspace-meta {
+  padding: 4px 12px;
+  background: #f0f5ff;
+  color: #667eea;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.switch-btn {
+  padding: 8px 16px;
+  background: white;
+  color: #666;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.switch-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.add-btn {
+  padding: 8px 16px;
+  background: white;
+  color: #667eea;
+  border: 1px solid #667eea;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.add-btn:hover {
+  background: #667eea;
+  color: white;
+}
+
 .run-btn {
   padding: 8px 24px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1133,8 +1321,43 @@ onUnmounted(() => {
     linear-gradient(#f0f0f0 1px, transparent 1px);
   background-size: 20px 20px;
   border-radius: 12px;
-  overflow: hidden;
+  overflow: auto;
   user-select: none;
+}
+
+.empty-workspace {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #999;
+}
+
+.empty-workspace .empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.empty-workspace p {
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+
+.add-agent-empty-btn {
+  padding: 10px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.add-agent-empty-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .connection-lines {
@@ -1919,5 +2142,79 @@ onUnmounted(() => {
 .flow-node.selected {
   border-color: #667eea;
   box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+/* 新建智能体弹窗 */
+.add-agent-modal {
+  background: white;
+  border-radius: 12px;
+  width: 480px;
+  max-width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.btn-cancel {
+  padding: 8px 20px;
+  background: #f5f5f5;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-confirm {
+  padding: 8px 20px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-confirm:disabled {
+  background: #d9d9d9;
+  cursor: not-allowed;
+}
+
+.form-row {
+  margin-bottom: 16px;
+}
+
+.form-row label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: #333;
+}
+
+.form-row .required {
+  color: #ff4d4f;
+}
+
+.form-input, .form-textarea, .form-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.form-input:focus, .form-textarea:focus, .form-select:focus {
+  border-color: #667eea;
+  outline: none;
 }
 </style>

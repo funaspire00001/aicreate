@@ -6,10 +6,9 @@ const StepLogSchema = new mongoose.Schema({
   taskId: { type: String, index: true },
   cardId: { type: String },
   
-  // 智能体标识（用于按智能体筛选日志）
+  // 智能体标识（agent id）
   agentKey: { 
-    type: String, 
-    enum: ['organizer', 'architect', 'planner', 'generator', 'system'],
+    type: String,
     index: true 
   },
   

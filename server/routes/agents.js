@@ -1,7 +1,5 @@
 import express from 'express';
 import Agent from '../models/Agent.js';
-import { restartAgent } from '../services/agentScheduler.js';
-import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
 
@@ -53,13 +51,7 @@ router.get('/models', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    // 支持通过 id 或 key 查询
-    const agent = await Agent.findOne({ 
-      $or: [
-        { id: req.params.id },
-        { key: req.params.id }
-      ]
-    });
+    const agent = await Agent.findOne({ id: req.params.id });
     if (agent) {
       res.json({
         success: true,
@@ -84,26 +76,41 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { name, role, description, modelId, prompt, temperature, maxTokens, enabled, capabilities } = req.body;
+    const { name, description, type, modelId, prompt, temperature, maxTokens, enabled, capabilities } = req.body;
     
-    if (!name || !role || !prompt) {
+    if (!name) {
       return res.status(400).json({
         success: false,
-        error: '缺少必要参数：name, role, prompt'
+        error: '缺少必要参数：name'
       });
     }
     
+    // 生成带前缀的唯一ID
+    const agentId = `agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
     const newAgent = new Agent({
-      id: uuidv4(),
+      id: agentId,
       name,
-      role,
+      type: type || 'processor',
       description: description || '',
       modelId: modelId || 'ollama-qwen',
-      prompt,
+      prompt: prompt || '请配置智能体的提示词...',
       temperature: temperature ?? 0.7,
       maxTokens: maxTokens ?? 4096,
       enabled: enabled !== false,
-      capabilities: capabilities || []
+      capabilities: capabilities || [],
+      ai: {
+        enabled: true,
+        modelId: modelId || 'ollama-qwen',
+        prompt: prompt || '',
+        temperature: temperature ?? 0.7,
+        maxTokens: maxTokens ?? 4096
+      },
+      schedule: {
+        interval: 5000,
+        batchSize: 1,
+        maxRetries: 3
+      }
     });
     
     await newAgent.save();
@@ -125,13 +132,9 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { name, role, description, modelId, prompt, temperature, maxTokens, enabled, capabilities, ai, schedule, data } = req.body;
+    const { name, description, modelId, prompt, temperature, maxTokens, enabled, capabilities, ai, schedule, data } = req.body;
     
-    // 支持通过 id 或 _id 或 key 查询
-    let agent = await Agent.findOne({ id: req.params.id });
-    if (!agent) {
-      agent = await Agent.findOne({ _id: req.params.id });
-    }
+    const agent = await Agent.findOne({ id: req.params.id });
     
     if (!agent) {
       return res.status(404).json({
@@ -194,18 +197,13 @@ router.put('/:id', async (req, res) => {
     
     await agent.save();
     
-    // 配置变更后重启智能体调度，让配置立即生效
-    const agentKey = agent.key || agent.role;
-    if (agentKey) {
-      restartAgent(agentKey);
-    }
-    
     res.json({
       success: true,
       agent,
       message: '配置已保存并立即生效'
     });
   } catch (error) {
+    console.error('更新智能体失败:', error);
     res.status(500).json({
       success: false,
       error: error.message

@@ -1,11 +1,10 @@
 import mongoose from 'mongoose';
 
 const AgentInputSchema = new mongoose.Schema({
-  // 智能体标识
+  // 智能体标识（agent id）
   agentKey: {
     type: String,
-    required: true,
-    enum: ['organizer', 'architect', 'planner', 'generator']
+    required: true
   },
   
   // 来源信息
@@ -15,8 +14,7 @@ const AgentInputSchema = new mongoose.Schema({
   },
   sourceType: {
     type: String,
-    required: true,
-    enum: ['demand', 'keypoint', 'knowledgetree', 'cardplan']
+    required: true
   },
   sourceUpdatedAt: {
     type: Date,

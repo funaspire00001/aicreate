@@ -1,11 +1,10 @@
 import mongoose from 'mongoose';
 
 const AgentOutputSchema = new mongoose.Schema({
-  // 智能体标识
+  // 智能体标识（agent id）
   agentKey: {
     type: String,
-    required: true,
-    enum: ['organizer', 'architect', 'planner', 'generator']
+    required: true
   },
   
   // 关联的输入记录
@@ -22,8 +21,7 @@ const AgentOutputSchema = new mongoose.Schema({
   },
   sourceType: {
     type: String,
-    required: true,
-    enum: ['demand', 'keypoint', 'knowledgetree', 'cardplan']
+    required: true
   },
   
   // 输出数据
