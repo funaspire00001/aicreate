@@ -1,5 +1,6 @@
 import express from 'express';
 import Agent from '../models/Agent.js';
+import { restartAgent } from '../services/agentScheduler.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
@@ -23,11 +24,42 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * 获取可用模型列表
+ */
+router.get('/models', async (req, res) => {
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    
+    const configPath = path.join(__dirname, '../../config/models.json');
+    const configData = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configData);
+    
+    const models = [...(config.models || []), ...(config.localModels || [])]
+      .filter(m => m.enabled)
+      .map(m => ({ id: m.id, name: m.name, provider: m.provider, model: m.model }));
+    
+    res.json({ success: true, models });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * 获取单个智能体
  */
 router.get('/:id', async (req, res) => {
   try {
-    const agent = await Agent.findOne({ id: req.params.id });
+    // 支持通过 id 或 key 查询
+    const agent = await Agent.findOne({ 
+      $or: [
+        { id: req.params.id },
+        { key: req.params.id }
+      ]
+    });
     if (agent) {
       res.json({
         success: true,
@@ -93,9 +125,13 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { name, role, description, modelId, prompt, temperature, maxTokens, enabled, capabilities } = req.body;
+    const { name, role, description, modelId, prompt, temperature, maxTokens, enabled, capabilities, ai, schedule, data } = req.body;
     
-    const agent = await Agent.findOne({ id: req.params.id });
+    // 支持通过 id 或 _id 或 key 查询
+    let agent = await Agent.findOne({ id: req.params.id });
+    if (!agent) {
+      agent = await Agent.findOne({ _id: req.params.id });
+    }
     
     if (!agent) {
       return res.status(404).json({
@@ -104,22 +140,70 @@ router.put('/:id', async (req, res) => {
       });
     }
     
-    // 更新字段
+    // 更新基础字段
     if (name !== undefined) agent.name = name;
-    if (role !== undefined) agent.role = role;
     if (description !== undefined) agent.description = description;
-    if (modelId !== undefined) agent.modelId = modelId;
-    if (prompt !== undefined) agent.prompt = prompt;
-    if (temperature !== undefined) agent.temperature = temperature;
-    if (maxTokens !== undefined) agent.maxTokens = maxTokens;
     if (enabled !== undefined) agent.enabled = enabled;
-    if (capabilities !== undefined) agent.capabilities = capabilities;
+    
+    // 更新 AI 配置
+    if (ai !== undefined) {
+      agent.ai = {
+        ...agent.ai,
+        ...ai
+      };
+    }
+    
+    // 兼容旧字段
+    if (modelId !== undefined) {
+      agent.ai = agent.ai || {};
+      agent.ai.modelId = modelId;
+    }
+    if (prompt !== undefined) {
+      agent.ai = agent.ai || {};
+      agent.ai.prompt = prompt;
+    }
+    if (temperature !== undefined) {
+      agent.ai = agent.ai || {};
+      agent.ai.temperature = temperature;
+    }
+    if (maxTokens !== undefined) {
+      agent.ai = agent.ai || {};
+      agent.ai.maxTokens = maxTokens;
+    }
+    
+    // 更新调度配置
+    if (schedule !== undefined) {
+      agent.schedule = {
+        ...agent.schedule,
+        ...schedule
+      };
+    }
+    
+    // 更新数据配置
+    if (data !== undefined) {
+      agent.data = {
+        ...agent.data,
+        ...data
+      };
+    }
+    
+    // 更新能力标签
+    if (capabilities !== undefined) {
+      agent.skills = capabilities;
+    }
     
     await agent.save();
     
+    // 配置变更后重启智能体调度，让配置立即生效
+    const agentKey = agent.key || agent.role;
+    if (agentKey) {
+      restartAgent(agentKey);
+    }
+    
     res.json({
       success: true,
-      agent
+      agent,
+      message: '配置已保存并立即生效'
     });
   } catch (error) {
     res.status(500).json({

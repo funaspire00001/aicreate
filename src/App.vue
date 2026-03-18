@@ -10,10 +10,8 @@
             <span class="nav-icon">📊</span>
             <span class="nav-text">仪表盘</span>
           </router-link>
-          <router-link to="/workflows" class="nav-item">
-            <span class="nav-icon">⚙️</span>
-            <span class="nav-text">工作流管理</span>
-          </router-link>
+          
+          <div class="nav-group-title">AI 能力</div>
           <router-link to="/agents" class="nav-item">
             <span class="nav-icon">👥</span>
             <span class="nav-text">智能体管理</span>
@@ -22,6 +20,12 @@
             <span class="nav-icon">🤖</span>
             <span class="nav-text">模型管理</span>
           </router-link>
+          <router-link to="/skills" class="nav-item">
+            <span class="nav-icon">✨</span>
+            <span class="nav-text">技能配置</span>
+          </router-link>
+          
+          <div class="nav-group-title">业务</div>
           <router-link to="/demands" class="nav-item">
             <span class="nav-icon">📝</span>
             <span class="nav-text">需求管理</span>
@@ -33,6 +37,12 @@
           <router-link to="/local-cards" class="nav-item">
             <span class="nav-icon">🃏</span>
             <span class="nav-text">卡片管理</span>
+          </router-link>
+          
+          <div class="nav-group-title">系统</div>
+          <router-link to="/workflows" class="nav-item">
+            <span class="nav-icon">⚙️</span>
+            <span class="nav-text">工作流管理</span>
           </router-link>
           <router-link to="/data" class="nav-item">
             <span class="nav-icon">🗄️</span>
@@ -98,6 +108,15 @@ body {
 
 .nav-links {
   padding: 16px 0;
+}
+
+.nav-group-title {
+  padding: 16px 24px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .nav-item {

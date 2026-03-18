@@ -28,7 +28,7 @@ const demandSchema = new mongoose.Schema({
   // 来源
   source: {
     type: String,
-    enum: ['manual', 'web', 'feedback', 'import'],
+    enum: ['manual', 'web', 'feedback', 'import', 'user_input'],
     default: 'manual'
   },
 
@@ -37,18 +37,33 @@ const demandSchema = new mongoose.Schema({
     type: String
   }],
 
-  // 优先级
-  priority: {
+  // 分类（AI 生成）
+  category: {
     type: String,
-    enum: ['low', 'normal', 'high'],
-    default: 'normal'
+    default: null
+  },
+
+  // 优先级（1-5，AI 评估）
+  priority: {
+    type: Number,
+    min: 1,
+    max: 5,
+    default: 3
+  },
+
+  // 质量评分（1-10，AI 评估）
+  quality: {
+    type: Number,
+    min: 1,
+    max: 10,
+    default: null
   },
 
   // 状态
   status: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed'],
-    default: 'pending',
+    enum: ['new', 'pending', 'processing', 'completed', 'failed'],
+    default: 'new',
     index: true
   },
 
@@ -57,6 +72,17 @@ const demandSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+
+  // ===== 需求智能体相关 =====
+  
+  // 是否已被需求智能体处理
+  consumedByDemandAgent: { type: Boolean, default: false },
+  consumedByDemandAgentAt: { type: Date },
+  
+  // AI 处理结果
+  aiProcessed: { type: Boolean, default: false },
+  aiSummary: { type: String },
+  aiSuggestions: { type: String },
 
   // ===== 消费标记（下游智能体使用）=====
   
@@ -131,6 +157,7 @@ const demandSchema = new mongoose.Schema({
 demandSchema.index({ status: 1, createdAt: -1 });
 demandSchema.index({ source: 1 });
 demandSchema.index({ currentStep: 1 });
+demandSchema.index({ priority: 1 });
 
 // 生成需求ID
 demandSchema.statics.generateId = function() {

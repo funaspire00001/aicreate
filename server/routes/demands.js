@@ -112,7 +112,7 @@ router.get('/agents/:key/logs', async (req, res) => {
     const { key } = req.params;
     const { limit = 50 } = req.query;
     
-    const validKeys = ['organizer', 'architect', 'planner', 'generator', 'system'];
+    const validKeys = ['organizer', 'architect', 'planner', 'generator', 'system', 'demand', 'output'];
     if (!validKeys.includes(key)) {
       return res.status(400).json({
         success: false,
@@ -149,6 +149,87 @@ router.get('/agents/:key/logs', async (req, res) => {
 router.get('/agents/:key/detail', async (req, res) => {
   try {
     const { key } = req.params;
+    
+    // 特殊节点处理 - 需求智能体
+    if (key === 'demand') {
+      // 尝试获取需求智能体配置
+      let agent = await Agent.findOne({ key: 'demand' });
+      
+      // 如果不存在，创建默认配置
+      if (!agent) {
+        agent = await Agent.create({
+          id: `agent_demand_${Date.now()}`,
+          key: 'demand',
+          name: '需求智能体',
+          type: 'source',
+          description: '收集和管理用户需求，支持AI增强的质量评估',
+          enabled: true,
+          ai: {
+            enabled: false,
+            modelId: 'ollama-qwen',
+            prompt: '你是一个需求分析专家。请分析用户需求的优先级、质量、分类，并给出改进建议。',
+            temperature: 0.3,
+            maxTokens: 2048
+          },
+          data: {
+            inputs: [
+              { source: 'user_input', type: 'direct', description: '用户直接输入' },
+              { source: 'feedback', type: 'polling', description: '用户反馈' }
+            ],
+            output: {
+              collection: 'demands',
+              status: 'pending'
+            }
+          },
+          schedule: {
+            interval: 5000,
+            batchSize: 1,
+            enabled: true
+          }
+        });
+      }
+      
+      // 获取统计数据
+      const totalDemands = await Demand.countDocuments();
+      const newDemands = await Demand.countDocuments({ status: 'new' });
+      const processedDemands = await Demand.countDocuments({ consumedByDemandAgent: true });
+      const pendingDemands = await Demand.countDocuments({ status: 'pending' });
+      
+      return res.json({
+        success: true,
+        detail: {
+          config: agent,
+          inputStats: { 
+            total: totalDemands, 
+            new: newDemands, 
+            pending: pendingDemands,
+            processed: processedDemands 
+          },
+          outputStats: { total: processedDemands, completed: pendingDemands }
+        }
+      });
+    }
+    
+    if (key === 'output') {
+      return res.json({
+        success: true,
+        detail: {
+          config: {
+            id: 'output',
+            name: '输出',
+            role: 'output',
+            description: '已完成的需求输出',
+            modelId: '-',
+            prompt: '',
+            temperature: 0,
+            maxTokens: 0,
+            enabled: true
+          },
+          inputStats: { total: 0, pending: 0, consumed: 0 },
+          outputStats: { total: 0, completed: 0 }
+        }
+      });
+    }
     
     const roleMap = {
       organizer: { modelRole: 'organizer', inputModel: 'Demand', outputModel: 'KeyPoint', inputField: 'consumedByKeyPoint', outputField: 'consumedByKnowledgeTree' },
@@ -373,7 +454,8 @@ router.post('/', async (req, res) => {
       content: content?.trim() || '',
       source: source || 'manual',
       tags: tags || [],
-      priority: priority || 'normal'
+      priority: typeof priority === 'number' ? priority : 3,
+      status: 'new'  // 新需求，等待需求智能体处理
     });
     
     await demand.save();
@@ -590,6 +672,336 @@ router.post('/batch', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// ============================================
+// KeyPoint 数据 CRUD
+// ============================================
+router.get('/data/keypoints', async (req, res) => {
+  try {
+    const { limit = 20, page = 1, status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    
+    const total = await KeyPoint.countDocuments(filter);
+    const data = await KeyPoint.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+    
+    res.json({ success: true, data, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/data/keypoints', async (req, res) => {
+  try {
+    const { demandId, input, points, summary, status = 'pending' } = req.body;
+    const keyPoint = await KeyPoint.create({
+      id: `KP_${Date.now()}_${uuidv4().slice(0, 8)}`,
+      demandId,
+      input,
+      points,
+      summary,
+      status,
+      createdAt: new Date()
+    });
+    res.json({ success: true, data: keyPoint });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.put('/data/keypoints/:id', async (req, res) => {
+  try {
+    const { points, summary, status } = req.body;
+    const keyPoint = await KeyPoint.findOneAndUpdate(
+      { id: req.params.id },
+      { ...(points && { points }), ...(summary && { summary }), ...(status && { status }) },
+      { new: true }
+    );
+    res.json({ success: true, data: keyPoint });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.delete('/data/keypoints/:id', async (req, res) => {
+  try {
+    await KeyPoint.deleteOne({ id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// KnowledgeTree 数据 CRUD
+// ============================================
+router.get('/data/knowledge-trees', async (req, res) => {
+  try {
+    const { limit = 20, page = 1, status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    
+    const total = await KnowledgeTree.countDocuments(filter);
+    const data = await KnowledgeTree.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+    
+    res.json({ success: true, data, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/data/knowledge-trees', async (req, res) => {
+  try {
+    const { demandId, keyPointId, input, tree, status = 'pending' } = req.body;
+    const knowledgeTree = await KnowledgeTree.create({
+      id: `KT_${Date.now()}_${uuidv4().slice(0, 8)}`,
+      demandId,
+      keyPointId,
+      input,
+      tree,
+      status,
+      createdAt: new Date()
+    });
+    res.json({ success: true, data: knowledgeTree });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.put('/data/knowledge-trees/:id', async (req, res) => {
+  try {
+    const { tree, status } = req.body;
+    const knowledgeTree = await KnowledgeTree.findOneAndUpdate(
+      { id: req.params.id },
+      { ...(tree && { tree }), ...(status && { status }) },
+      { new: true }
+    );
+    res.json({ success: true, data: knowledgeTree });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.delete('/data/knowledge-trees/:id', async (req, res) => {
+  try {
+    await KnowledgeTree.deleteOne({ id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// CardPlan 数据 CRUD
+// ============================================
+router.get('/data/card-plans', async (req, res) => {
+  try {
+    const { limit = 20, page = 1, status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    
+    const total = await CardPlan.countDocuments(filter);
+    const data = await CardPlan.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit));
+    
+    res.json({ success: true, data, total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/data/card-plans', async (req, res) => {
+  try {
+    const { demandId, knowledgeTreeId, input, plans, totalCards = 0, status = 'pending' } = req.body;
+    const cardPlan = await CardPlan.create({
+      id: `CP_${Date.now()}_${uuidv4().slice(0, 8)}`,
+      demandId,
+      knowledgeTreeId,
+      input,
+      plans,
+      totalCards,
+      status,
+      createdAt: new Date()
+    });
+    res.json({ success: true, data: cardPlan });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.put('/data/card-plans/:id', async (req, res) => {
+  try {
+    const { plans, totalCards, status } = req.body;
+    const cardPlan = await CardPlan.findOneAndUpdate(
+      { id: req.params.id },
+      { 
+        ...(plans && { plans }), 
+        ...(totalCards !== undefined && { totalCards }), 
+        ...(status && { status }) 
+      },
+      { new: true }
+    );
+    res.json({ success: true, data: cardPlan });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.delete('/data/card-plans/:id', async (req, res) => {
+  try {
+    await CardPlan.deleteOne({ id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================
+// AgentInput 和 AgentOutput API
+// ============================================
+
+import AgentInput from '../models/AgentInput.js';
+import AgentOutput from '../models/AgentOutput.js';
+import { getAgentDataStats } from '../services/agentScheduler.js';
+
+/**
+ * 获取智能体输入数据列表
+ */
+router.get('/agents/:key/inputs', async (req, res) => {
+  try {
+    const { key } = req.params;
+    const { status, limit = 20, skip = 0 } = req.query;
+    
+    const query = { agentKey: key };
+    if (status) query.status = status;
+    
+    const inputs = await AgentInput.find(query)
+      .sort({ createdAt: -1 })
+      .skip(parseInt(skip))
+      .limit(parseInt(limit))
+      .lean();
+    
+    const total = await AgentInput.countDocuments(query);
+    
+    res.json({
+      success: true,
+      data: inputs,
+      total,
+      hasMore: total > parseInt(skip) + inputs.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取智能体输出数据列表
+ */
+router.get('/agents/:key/outputs', async (req, res) => {
+  try {
+    const { key } = req.params;
+    const { limit = 20, skip = 0 } = req.query;
+    
+    const outputs = await AgentOutput.find({ agentKey: key })
+      .sort({ createdAt: -1 })
+      .skip(parseInt(skip))
+      .limit(parseInt(limit))
+      .populate('inputId')
+      .lean();
+    
+    const total = await AgentOutput.countDocuments({ agentKey: key });
+    
+    res.json({
+      success: true,
+      data: outputs,
+      total,
+      hasMore: total > parseInt(skip) + outputs.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取智能体数据统计
+ */
+router.get('/agents/:key/data-stats', async (req, res) => {
+  try {
+    const { key } = req.params;
+    const stats = await getAgentDataStats(key);
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取单条输入详情
+ */
+router.get('/inputs/:id', async (req, res) => {
+  try {
+    const input = await AgentInput.findById(req.params.id).lean();
+    if (!input) {
+      return res.status(404).json({ success: false, error: '未找到记录' });
+    }
+    res.json({ success: true, data: input });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 获取单条输出详情
+ */
+router.get('/outputs/:id', async (req, res) => {
+  try {
+    const output = await AgentOutput.findById(req.params.id)
+      .populate('inputId')
+      .lean();
+    if (!output) {
+      return res.status(404).json({ success: false, error: '未找到记录' });
+    }
+    res.json({ success: true, data: output });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 重试失败的输入
+ */
+router.post('/inputs/:id/retry', async (req, res) => {
+  try {
+    const input = await AgentInput.findById(req.params.id);
+    if (!input) {
+      return res.status(404).json({ success: false, error: '未找到记录' });
+    }
+    
+    if (input.status !== 'failed') {
+      return res.status(400).json({ success: false, error: '只能重试失败的记录' });
+    }
+    
+    input.status = 'pending';
+    input.retryCount += 1;
+    input.errorMsg = '';
+    await input.save();
+    
+    res.json({ success: true, message: '已加入重试队列' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

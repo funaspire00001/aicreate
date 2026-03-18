@@ -164,182 +164,14 @@
         </div>
       </div>
 
-      <!-- 智能体详情面板 -->
-      <div class="detail-panel" v-if="selectedAgentKey">
-        <div class="detail-header">
-          <span class="detail-title">
-            {{ getAgentDisplayName(selectedAgentKey) }} - 详情
-          </span>
-          <button class="close-btn" @click="selectedAgentKey = ''">✕</button>
-        </div>
-        
-        <!-- Tab切换 -->
-        <div class="detail-tabs">
-          <button :class="['tab-btn', { active: activeTab === 'config' }]" @click="activeTab = 'config'">
-            智能体配置
-          </button>
-          <button :class="['tab-btn', { active: activeTab === 'logs' }]" @click="activeTab = 'logs'">
-            执行日志
-          </button>
-          <button :class="['tab-btn', { active: activeTab === 'data' }]" @click="activeTab = 'data'">
-            数据库信息
-          </button>
-        </div>
-        
-        <!-- Tab内容 -->
-        <div class="tab-content">
-          <!-- 智能体配置 -->
-          <div v-if="activeTab === 'config'" class="tab-pane config-pane">
-            <template v-if="agentDetail.config">
-              <div class="config-item">
-                <label>名称:</label>
-                <span>{{ agentDetail.config.name }}</span>
-              </div>
-              <div class="config-item">
-                <label>角色:</label>
-                <span>{{ agentDetail.config.role }}</span>
-              </div>
-              <div class="config-item">
-                <label>描述:</label>
-                <span>{{ agentDetail.config.description }}</span>
-              </div>
-              <div class="config-item">
-                <label>模型:</label>
-                <span>{{ agentDetail.config.modelId }}</span>
-              </div>
-              <div class="config-item">
-                <label>温度:</label>
-                <span>{{ agentDetail.config.temperature }}</span>
-              </div>
-              <div class="config-item">
-                <label>最大Token:</label>
-                <span>{{ agentDetail.config.maxTokens }}</span>
-              </div>
-              <div class="config-item full">
-                <label>System Prompt:</label>
-                <pre class="prompt-text">{{ agentDetail.config.prompt }}</pre>
-              </div>
-            </template>
-            <template v-else-if="selectedAgentKey === 'demand'">
-              <div class="config-item">
-                <label>数据源:</label>
-                <span>需求管理 (Demand)</span>
-              </div>
-              <div class="config-item">
-                <label>说明:</label>
-                <span>管理所有用户需求，包括新增、编辑、删除和执行</span>
-              </div>
-            </template>
-            <template v-else-if="selectedAgentKey === 'output'">
-              <div class="config-item">
-                <label>输出类型:</label>
-                <span>已完成的需求</span>
-              </div>
-              <div class="config-item">
-                <label>说明:</label>
-                <span>显示所有已完成处理的最终结果</span>
-              </div>
-            </template>
-            <div v-else class="empty-tip">未找到智能体配置</div>
-          </div>
-          
-          <!-- 执行日志 -->
-          <div v-if="activeTab === 'logs'" class="tab-pane logs-pane">
-            <div class="logs-content" ref="logsContainer">
-              <div class="log-item" v-for="(log, index) in logs" :key="index" :class="log.level">
-                <span class="log-time">{{ log.time }}</span>
-                <span class="log-level">{{ log.level }}</span>
-                <span class="log-msg">{{ log.message }}</span>
-                <span class="log-duration" v-if="log.duration">{{ log.duration }}ms</span>
-              </div>
-              <div v-if="logs.length === 0" class="empty-tip">暂无日志</div>
-            </div>
-          </div>
-          
-          <!-- 数据库信息 -->
-          <div v-if="activeTab === 'data'" class="tab-pane data-pane">
-            <template v-if="selectedAgentKey === 'demand'">
-              <div class="data-stats">
-                <div class="data-stat-card">
-                  <div class="stat-num">{{ demandStats.total }}</div>
-                  <div class="stat-label">总需求</div>
-                </div>
-                <div class="data-stat-card">
-                  <div class="stat-num pending">{{ demandStats.pending }}</div>
-                  <div class="stat-label">待处理</div>
-                </div>
-                <div class="data-stat-card">
-                  <div class="stat-num processing">{{ demandStats.processing }}</div>
-                  <div class="stat-label">处理中</div>
-                </div>
-                <div class="data-stat-card">
-                  <div class="stat-num completed">{{ demandStats.completed }}</div>
-                  <div class="stat-label">已完成</div>
-                </div>
-              </div>
-            </template>
-            <template v-else-if="agentDetail.inputStats">
-              <div class="data-section">
-                <h4>输入数据统计</h4>
-                <div class="data-stats">
-                  <div class="data-stat-card">
-                    <div class="stat-num">{{ agentDetail.inputStats.total || 0 }}</div>
-                    <div class="stat-label">总数</div>
-                  </div>
-                  <div class="data-stat-card">
-                    <div class="stat-num pending">{{ agentDetail.inputStats.pending || 0 }}</div>
-                    <div class="stat-label">待处理</div>
-                  </div>
-                  <div class="data-stat-card">
-                    <div class="stat-num">{{ agentDetail.inputStats.consumed || 0 }}</div>
-                    <div class="stat-label">已消费</div>
-                  </div>
-                </div>
-              </div>
-              <div class="data-section" v-if="agentDetail.outputStats">
-                <h4>输出数据统计</h4>
-                <div class="data-stats">
-                  <div class="data-stat-card">
-                    <div class="stat-num">{{ agentDetail.outputStats.total || 0 }}</div>
-                    <div class="stat-label">总数</div>
-                  </div>
-                  <div class="data-stat-card">
-                    <div class="stat-num completed">{{ agentDetail.outputStats.completed || 0 }}</div>
-                    <div class="stat-label">已完成</div>
-                  </div>
-                  <div class="data-stat-card" v-if="agentDetail.outputStats.totalCards">
-                    <div class="stat-num">{{ agentDetail.outputStats.totalCards[0]?.total || 0 }}</div>
-                    <div class="stat-label">卡片总数</div>
-                  </div>
-                </div>
-              </div>
-              <div class="data-section" v-if="agentDetail.currentData?.length > 0">
-                <h4>当前待处理数据</h4>
-                <div class="data-list">
-                  <div class="data-item" v-for="item in agentDetail.currentData" :key="item.id">
-                    <span class="item-id">{{ item.id?.slice(0, 12) }}...</span>
-                    <span class="item-status" :class="item.status">{{ item.status }}</span>
-                    <span class="item-summary">{{ item.summary || '-' }}</span>
-                  </div>
-                </div>
-              </div>
-            </template>
-            <template v-else-if="selectedAgentKey === 'output'">
-              <div class="data-stats">
-                <div class="data-stat-card">
-                  <div class="stat-num">{{ demandStats.completed }}</div>
-                  <div class="stat-label">已完成需求</div>
-                </div>
-                <div class="data-stat-card">
-                  <div class="stat-num">{{ agentStats.value?.generator?.totalCards || 0 }}</div>
-                  <div class="stat-label">生成卡片</div>
-                </div>
-              </div>
-            </template>
-            <div v-else class="empty-tip">暂无数据</div>
-          </div>
-        </div>
-      </div>
+      <!-- 智能体详情弹窗 -->
+      <AgentDetailModal 
+        v-if="selectedAgentKey" 
+        :agentKey="selectedAgentKey"
+        :agentName="getAgentDisplayName(selectedAgentKey)"
+        @close="selectedAgentKey = ''"
+        @update="fetchAgentStats"
+      />
     </div>
 
     <!-- 步骤详情弹窗 -->
@@ -383,6 +215,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { dashboardApi, statusApi } from '../api'
+import AgentDetailModal from '../components/AgentDetailModal.vue'
 
 const API_URL = 'http://localhost:3001/api'
 
@@ -423,6 +256,11 @@ const agentStats = ref({
 const selectedAgentKey = ref('')
 const activeTab = ref('config') // config, logs, data
 const agentDetail = ref({})
+const isEditing = ref(false)
+const editForm = ref({})
+const availableModels = ref([])
+const dataList = ref([])
+const dataLoading = ref(false)
 
 let refreshTimer = null
 
@@ -768,10 +606,115 @@ const fetchAgentDetail = async (agentKey) => {
     const data = await res.json()
     if (data.success) {
       agentDetail.value = data.detail
+      // 如果是智能体，设置编辑表单
+      if (data.detail.config && agentKey !== 'demand' && agentKey !== 'output') {
+        editForm.value = { ...data.detail.config }
+      }
     }
   } catch (err) {
     console.error('获取智能体详情失败:', err)
     agentDetail.value = {}
+  }
+}
+
+// 获取可用模型列表
+const fetchModels = async () => {
+  try {
+    const res = await fetch(`${API_URL}/agents/models`)
+    const data = await res.json()
+    if (data.success) {
+      availableModels.value = data.models
+    }
+  } catch (err) {
+    console.error('获取模型列表失败:', err)
+  }
+}
+
+// 保存智能体配置
+const saveAgentConfig = async () => {
+  if (!editForm.value.id) return
+  try {
+    const res = await fetch(`${API_URL}/agents/${editForm.value.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: editForm.value.name,
+        description: editForm.value.description,
+        modelId: editForm.value.modelId,
+        prompt: editForm.value.prompt,
+        temperature: editForm.value.temperature,
+        maxTokens: editForm.value.maxTokens,
+        enabled: editForm.value.enabled
+      })
+    })
+    const data = await res.json()
+    if (data.success) {
+      isEditing.value = false
+      fetchAgentDetail(selectedAgentKey.value)
+      fetchAgentStats()
+    } else {
+      alert('保存失败: ' + data.error)
+    }
+  } catch (err) {
+    console.error('保存配置失败:', err)
+    alert('保存失败')
+  }
+}
+
+// 获取数据列表
+const fetchDataList = async () => {
+  dataLoading.value = true
+  try {
+    let endpoint = ''
+    if (selectedAgentKey.value === 'demand') {
+      endpoint = `${API_URL}/demands?limit=50`
+    } else if (selectedAgentKey.value === 'organizer') {
+      endpoint = `${API_URL}/demands/data/keypoints?limit=20`
+    } else if (selectedAgentKey.value === 'architect') {
+      endpoint = `${API_URL}/demands/data/knowledge-trees?limit=20`
+    } else if (selectedAgentKey.value === 'planner') {
+      endpoint = `${API_URL}/demands/data/card-plans?limit=20`
+    } else if (selectedAgentKey.value === 'generator') {
+      endpoint = `${API_URL}/local-cards?limit=20`
+    }
+    
+    if (endpoint) {
+      const res = await fetch(endpoint)
+      const data = await res.json()
+      if (data.success || data.data) {
+        dataList.value = data.data || data.demands || []
+      }
+    }
+  } catch (err) {
+    console.error('获取数据列表失败:', err)
+    dataList.value = []
+  }
+  dataLoading.value = false
+}
+
+// 删除数据
+const deleteData = async (id) => {
+  if (!confirm('确定要删除这条记录吗？')) return
+  try {
+    let endpoint = ''
+    if (selectedAgentKey.value === 'organizer') {
+      endpoint = `${API_URL}/demands/data/keypoints/${id}`
+    } else if (selectedAgentKey.value === 'architect') {
+      endpoint = `${API_URL}/demands/data/knowledge-trees/${id}`
+    } else if (selectedAgentKey.value === 'planner') {
+      endpoint = `${API_URL}/demands/data/card-plans/${id}`
+    }
+    
+    if (endpoint) {
+      const res = await fetch(endpoint, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        fetchDataList()
+        fetchAgentStats()
+      }
+    }
+  } catch (err) {
+    console.error('删除失败:', err)
   }
 }
 
@@ -1581,6 +1524,123 @@ onUnmounted(() => {
   width: 100%;
   margin: 0;
 }
+
+/* 编辑表单样式 */
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.config-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.config-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-edit, .btn-save, .btn-cancel, .btn-refresh, .btn-delete {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-edit { background: #1890ff; color: white; }
+.btn-save { background: #52c41a; color: white; }
+.btn-cancel { background: #999; color: white; }
+.btn-refresh { background: #1890ff; color: white; padding: 4px 10px; }
+.btn-delete { background: #ff4d4f; color: white; padding: 2px 8px; font-size: 11px; }
+
+.edit-input, .edit-select, .edit-textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.edit-input.small {
+  width: 80px;
+}
+
+.edit-textarea {
+  resize: vertical;
+  font-family: monospace;
+}
+
+/* 数据表格样式 */
+.data-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.data-header h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.data-table-wrapper {
+  margin-top: 16px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.data-table th, .data-table td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.data-table th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.data-table .item-id {
+  font-family: monospace;
+  color: #666;
+}
+
+.data-table .item-summary {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table .item-time {
+  color: #999;
+  font-size: 11px;
+}
+
+.data-table .item-actions {
+  white-space: nowrap;
+}
+
+.item-status {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.item-status.pending { background: #fff7e6; color: #fa8c16; }
+.item-status.processing { background: #e6f7ff; color: #1890ff; }
+.item-status.completed { background: #f6ffed; color: #52c41a; }
+.item-status.failed { background: #fff2f0; color: #ff4d4f; }
 
 /* 日志面板 */
 .logs-pane .logs-content {
