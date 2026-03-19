@@ -1,5 +1,6 @@
 import express from 'express';
 import Agent from '../models/Agent.js';
+import { createAgentDataTable, dropAgentDataTable, getAgentDataStats } from '../services/agentDataService.js';
 
 const router = express.Router();
 
@@ -115,9 +116,13 @@ router.post('/', async (req, res) => {
     
     await newAgent.save();
     
+    // 自动创建智能体数据表
+    const tableResult = await createAgentDataTable(agentId, name);
+    
     res.json({
       success: true,
-      agent: newAgent
+      agent: newAgent,
+      dataTable: tableResult
     });
   } catch (error) {
     res.status(500).json({
@@ -216,18 +221,25 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const result = await Agent.deleteOne({ id: req.params.id });
+    const agent = await Agent.findOne({ id: req.params.id });
     
-    if (result.deletedCount === 0) {
+    if (!agent) {
       return res.status(404).json({
         success: false,
         error: '智能体不存在'
       });
     }
     
+    // 删除智能体数据表
+    const tableResult = await dropAgentDataTable(req.params.id);
+    
+    // 删除智能体记录
+    await Agent.deleteOne({ id: req.params.id });
+    
     res.json({
       success: true,
-      message: '智能体删除成功'
+      message: '智能体删除成功',
+      dataTable: tableResult
     });
   } catch (error) {
     res.status(500).json({
@@ -480,17 +492,37 @@ router.post('/init-defaults', async (req, res) => {
     
     await Agent.insertMany(defaultAgents);
     
+    // 为每个默认智能体创建数据表
+    const tableResults = [];
+    for (const agent of defaultAgents) {
+      const tableResult = await createAgentDataTable(agent.id, agent.name);
+      tableResults.push({ agentId: agent.id, agentName: agent.name, ...tableResult });
+    }
+    
     res.json({
       success: true,
       message: '默认智能体创建成功',
       count: defaultAgents.length,
-      agents: defaultAgents
+      agents: defaultAgents,
+      dataTables: tableResults
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       error: error.message
     });
+  }
+});
+
+/**
+ * 获取智能体数据表统计
+ */
+router.get('/:id/data-stats', async (req, res) => {
+  try {
+    const stats = await getAgentDataStats(req.params.id);
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

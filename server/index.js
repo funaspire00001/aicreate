@@ -24,6 +24,8 @@ import { createAdminRouter } from './routes/admin.js';
 
 import { startScheduler } from './services/scheduler.js';
 import { startAgentScheduler } from './services/agentScheduler.js';
+import { runSyncTasks, getSyncStats } from './services/syncService.js';
+import { initializeAgentDataTables } from './services/agentDataService.js';
 import CollectionMeta from './models/CollectionMeta.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -117,6 +119,16 @@ mongoose.connect(MONGO_URI)
       console.error('❌ AdminJS 初始化失败:', err);
     }
     
+    // 初始化智能体数据表
+    try {
+      const tableResults = await initializeAgentDataTables();
+      if (tableResults.length > 0) {
+        console.log(`[初始化] 智能体数据表: ${tableResults.length} 个`);
+      }
+    } catch (err) {
+      console.error('[初始化] 智能体数据表初始化失败:', err.message);
+    }
+    
     app.listen(PORT, () => {
       console.log(`🚀 服务器运行在 http://localhost:${PORT}`);
       
@@ -125,6 +137,18 @@ mongoose.connect(MONGO_URI)
       
       // 启动智能体调度器（每5秒检查一次）
       startAgentScheduler(5000);
+      
+      // 启动 CDC 同步调度器（每10秒检查一次）
+      setInterval(async () => {
+        try {
+          const results = await runSyncTasks();
+          if (results.length > 0) {
+            console.log(`[CDC] 完成同步任务: ${results.filter(r => r.success).length}/${results.length}`);
+          }
+        } catch (err) {
+          console.error('[CDC] 同步调度错误:', err.message);
+        }
+      }, 10000);
     });
   })
   .catch((err) => {

@@ -1,5 +1,6 @@
 import express from 'express';
 import AgentSyncTask from '../models/AgentSyncTask.js';
+import { triggerSync, getSyncStats, createSyncTask, runSyncTasks } from '../services/syncService.js';
 
 const router = express.Router();
 
@@ -114,28 +115,28 @@ router.post('/:id/reset-retry', async (req, res) => {
 // 获取同步统计
 router.get('/stats/summary', async (req, res) => {
   try {
-    const stats = await AgentSyncTask.aggregate([
-      {
-        $group: {
-          _id: '$lastStatus',
-          count: { $sum: 1 },
-          totalSynced: { $sum: '$totalSyncCount' }
-        }
-      }
-    ]);
-    
-    const total = await AgentSyncTask.countDocuments();
-    
-    res.json({
-      success: true,
-      data: {
-        total,
-        byStatus: stats.reduce((acc, s) => {
-          acc[s._id] = { count: s.count, totalSynced: s.totalSynced };
-          return acc;
-        }, {})
-      }
-    });
+    const stats = await getSyncStats();
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 手动触发单个同步任务
+router.post('/:id/trigger', async (req, res) => {
+  try {
+    const result = await triggerSync(req.params.id);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 手动触发所有同步任务
+router.post('/trigger-all', async (req, res) => {
+  try {
+    const results = await runSyncTasks();
+    res.json({ success: true, data: results });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
