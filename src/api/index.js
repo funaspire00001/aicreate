@@ -1,205 +1,120 @@
-/**
- * API 封装
- * 统一管理所有 API 请求
- */
-
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-/**
- * 通用请求方法
- */
 async function request(path, options = {}) {
   const url = `${API_URL}${path}`;
-  
-  const defaultOptions = {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  };
-  
-  const response = await fetch(url, { ...defaultOptions, ...options });
-  
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`HTTP ${res.status}: ${text}`);
   }
-  
-  return response.json();
+  return res.json();
 }
 
-// ============ 仪表盘 ============
+function qs(params = {}) {
+  const s = new URLSearchParams(params).toString();
+  return s ? `?${s}` : '';
+}
+
+// ────────── 智能体 ──────────
+export const agentsApi = {
+  list: (params) => request(`/api/agents${qs(params)}`),
+  get: (id) => request(`/api/agents/${id}`),
+  create: (data) => request('/api/agents', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/api/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/api/agents/${id}`, { method: 'DELETE' }),
+  pushInput: (id, data) => request(`/api/agents/${id}/input`, { method: 'POST', body: JSON.stringify(data) }),
+  dataStats: (id) => request(`/api/agents/${id}/data-stats`),
+  statsSummary: () => request('/api/agents/stats/summary'),
+};
+
+// ────────── 空间 ──────────
+export const workspacesApi = {
+  list: (params) => request(`/api/workspaces${qs(params)}`),
+  get: (id) => request(`/api/workspaces/${id}`),
+  create: (data) => request('/api/workspaces', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/api/workspaces/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/api/workspaces/${id}`, { method: 'DELETE' }),
+  agents: (id) => request(`/api/workspaces/${id}/agents`),
+  start: (id) => request(`/api/workspaces/${id}/start`, { method: 'POST' }),
+  pause: (id) => request(`/api/workspaces/${id}/pause`, { method: 'POST' }),
+};
+
+// ────────── 模型 ──────────
+export const modelsApi = {
+  list: () => request('/api/models'),
+  config: () => request('/api/models/config'),
+  saveConfig: (c) => request('/api/models/config', { method: 'PUT', body: JSON.stringify(c) }),
+  add: (m) => request('/api/models', { method: 'POST', body: JSON.stringify(m) }),
+  update: (id, m) => request(`/api/models/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(m) }),
+  delete: (id) => request(`/api/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  test: (id, prompt) => request(`/api/models/${encodeURIComponent(id)}/test`, { method: 'POST', body: JSON.stringify({ testPrompt: prompt }) }),
+  ollama: () => request('/api/models/ollama'),
+  ollamaStatus: () => request('/api/models/ollama/status'),
+  ollamaConfig: (c) => request('/api/models/ollama/config', { method: 'PUT', body: JSON.stringify(c) }),
+  stats: () => request('/api/models/stats'),
+};
+
+// ────────── 技能 ──────────
+export const skillsApi = {
+  list: (params) => request(`/api/skills${qs(params)}`),
+  get: (id) => request(`/api/skills/${id}`),
+  create: (data) => request('/api/skills', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/api/skills/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id) => request(`/api/skills/${id}`, { method: 'DELETE' }),
+  categories: () => request('/api/skills/meta/categories'),
+  tags: () => request('/api/skills/meta/tags'),
+};
+
+// ────────── 订阅任务 ──────────
+export const syncTasksApi = {
+  list: (params) => request(`/api/sync-tasks${qs(params)}`),
+  get: (id) => request(`/api/sync-tasks/${id}`),
+  trigger: (id) => request(`/api/sync-tasks/${id}/trigger`, { method: 'POST' }),
+  triggerAll: () => request('/api/sync-tasks/trigger-all', { method: 'POST' }),
+  resetRetry: (id) => request(`/api/sync-tasks/${id}/reset-retry`, { method: 'POST' }),
+  delete: (id) => request(`/api/sync-tasks/${id}`, { method: 'DELETE' }),
+  stats: () => request('/api/sync-tasks/stats/summary'),
+};
+
+// ────────── 日志 ──────────
+export const agentLogsApi = {
+  list: (params) => request(`/api/agent-logs${qs(params)}`),
+  get: (id) => request(`/api/agent-logs/${id}`),
+  trace: (traceId) => request(`/api/agent-logs/trace/${traceId}`),
+  stats: (params) => request(`/api/agent-logs/stats/summary${qs(params)}`),
+  cleanup: (days) => request(`/api/agent-logs/cleanup${qs({ days })}`, { method: 'DELETE' }),
+};
+
+// ────────── 仪表盘 ──────────
 export const dashboardApi = {
   get: () => request('/api/dashboard'),
-  // 已废弃：请使用工作流引擎 POST /api/workflows/:id/run
-  createCard: (data) => request('/api/generate', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
 };
 
-// ============ 本地卡片管理 ============
-export const localCardsApi = {
-  list: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/api/local-cards?${query}`);
-  },
-  
-  get: (cardId) => request(`/api/local-cards/${cardId}`),
-  
-  publish: (cardId) => request(`/api/local-cards/${cardId}/publish`, {
-    method: 'POST',
-  }),
-  
-  delete: (cardId) => request(`/api/local-cards/${cardId}`, {
-    method: 'DELETE',
-  }),
-  
-  stats: () => request('/api/local-cards/stats/summary'),
+// ────────── 数据管理 ──────────
+export const dataApi = {
+  collections: () => request('/api/data/collections'),
+  collectionData: (name, params) => request(`/api/data/collections/${name}${qs(params)}`),
+  getRecord: (name, id) => request(`/api/data/collections/${name}/${id}`),
+  updateRecord: (name, id, data) => request(`/api/data/collections/${name}/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteRecord: (name, id) => request(`/api/data/collections/${name}/${id}`, { method: 'DELETE' }),
 };
 
-// ============ 需求追踪 ============
-export const requestsApi = {
-  list: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/api/requests?${query}`);
-  },
-  
-  get: (id) => request(`/api/requests/${id}`),
-  
-  create: (data) => request('/api/requests', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  
-  updateStep: (id, data) => request(`/api/requests/${id}/step`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-  
-  complete: (id, data) => request(`/api/requests/${id}/complete`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-};
-
-// ============ 知识库 ============
-export const knowledgeApi = {
-  list: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/api/knowledge?${query}`);
-  },
-  
-  get: (id) => request(`/api/knowledge/${id}`),
-  
-  search: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/api/knowledge/search?${query}`);
-  },
-  
-  create: (data) => request('/api/knowledge', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  
-  update: (id, data) => request(`/api/knowledge/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-  
-  delete: (id) => request(`/api/knowledge/${id}`, {
-    method: 'DELETE',
-  }),
-  
-  stats: () => request('/api/knowledge/stats/overview'),
-};
-
-// ============ 智能体 ============
-export const agentsApi = {
-  list: () => request('/api/agents'),
-  
-  stats: (name) => request(`/api/agents/${name}/stats`),
-  
-  logs: (name, params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/api/agents/${name}/logs?${query}`);
-  },
-};
-
-// ============ 用户反馈 ============
-export const feedbackApi = {
-  list: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/api/feedback?${query}`);
-  },
-  
-  updateStatus: (id, data) => request(`/api/feedback/${id}/status`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-};
-
-// ============ 健康检查 ============
+// ────────── 健康检查 ──────────
 export const healthApi = {
   check: () => request('/api/health'),
 };
 
-// ============ 处理状态 ============
-export const statusApi = {
-  health: () => request('/api/health'),
-  get: () => request('/api/status/status'),
-  scheduler: () => request('/api/status/scheduler/status'),
-  trigger: () => request('/api/status/trigger', { method: 'POST' }),
-};
-
-// ============ 模型管理 ============
-export const modelsApi = {
-  list: () => request('/api/models'),
-  
-  ollama: () => request('/api/models/ollama'),
-  
-  ollamaStatus: () => request('/api/models/ollama/status'),
-  
-  add: (model) => request('/api/models', { method: 'POST', body: model }),
-  
-  update: (id, model) => request(`/api/models/${encodeURIComponent(id)}`, { method: 'PUT', body: model }),
-  
-  delete: (id) => request(`/api/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  
-  test: (id, testPrompt) => request(`/api/models/${encodeURIComponent(id)}/test`, { method: 'POST', body: { testPrompt } }),
-  
-  updateOllamaConfig: (config) => request('/api/models/ollama/config', { method: 'PUT', body: config }),
-  
-  getConfig: () => request('/api/models/config'),
-  
-  saveConfig: (config) => request('/api/models/config', { method: 'PUT', body: config }),
-};
-
-// ============ 需求管理 ============
-export const demandsApi = {
-  list: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return request(`/api/demands?${query}`);
-  },
-  
-  get: (id) => request(`/api/demands/${id}`),
-  
-  create: (data) => request('/api/demands', { method: 'POST', body: data }),
-  
-  update: (id, data) => request(`/api/demands/${id}`, { method: 'PUT', body: data }),
-  
-  delete: (id) => request(`/api/demands/${id}`, { method: 'DELETE' }),
-  
-  stats: () => request('/api/demands/stats/overview'),
-};
-
 export default {
-  dashboard: dashboardApi,
-  requests: requestsApi,
-  knowledge: knowledgeApi,
   agents: agentsApi,
-  feedback: feedbackApi,
-  health: healthApi,
-  status: statusApi,
-  localCards: localCardsApi,
+  workspaces: workspacesApi,
   models: modelsApi,
-  demands: demandsApi,
+  skills: skillsApi,
+  syncTasks: syncTasksApi,
+  agentLogs: agentLogsApi,
+  dashboard: dashboardApi,
+  data: dataApi,
+  health: healthApi,
 };

@@ -1,98 +1,76 @@
 import mongoose from 'mongoose';
 
 const agentSchema = new mongoose.Schema({
-  // ========== 基础信息 ==========
   id: { type: String, required: true, unique: true },
   name: { type: String, required: true },
-  type: {
-    type: String,
-    required: true,
-    enum: ['source', 'processor', 'output'],
-    default: 'processor'
-  },
   description: { type: String, default: '' },
-  
-  // ========== 数据配置 ==========
-  data: {
-    // 输入配置（支持多个输入源）
-    inputs: [{
-      source: { 
-        type: String, 
-        enum: ['user_input', 'feedback', 'agent_output', 'manual', 'external']
-      },
-      collection: { type: String },      // 数据表名
-      query: { type: mongoose.Schema.Types.Mixed }, // 查询条件
-      trigger: { 
-        type: String, 
-        enum: ['polling', 'event', 'manual'],
-        default: 'polling'
-      }
-    }],
-    // 输出配置
-    output: {
-      collection: { type: String },       // 输出数据表
-      status: { type: String, default: 'pending' },  // 输出后状态
-      notify: [{ type: String }]          // 通知下游智能体
-    }
-  },
-  
-  // ========== AI 配置（可选） ==========
+  workspaceId: { type: String, default: '' },
+
+  // AI 配置
   ai: {
     enabled: { type: Boolean, default: true },
-    modelId: { type: String, default: 'ollama-qwen' },
+    modelId: { type: String, default: '' },
     prompt: { type: String, default: '' },
     temperature: { type: Number, default: 0.7 },
     maxTokens: { type: Number, default: 4096 }
   },
-  
-  // ========== 技能配置 ==========
-  skills: [{
-    id: { type: String },
-    name: { type: String },
-    config: { type: mongoose.Schema.Types.Mixed }
-  }],
-  
-  // ========== 调度配置 ==========
+
+  // 独立调度配置
   schedule: {
-    interval: { type: Number, default: 5000 },    // 轮询间隔(ms)
-    batchSize: { type: Number, default: 1 },      // 批处理数量
-    maxRetries: { type: Number, default: 3 }      // 最大重试次数
+    enabled: { type: Boolean, default: true },
+    interval: { type: Number, default: 30000 },
+    batchSize: { type: Number, default: 10 },
+    maxRetries: { type: Number, default: 3 }
   },
-  
-  // ========== 运行时状态 ==========
+
+  // 成果表定义
+  outputSchema: {
+    collectionName: { type: String, default: '' },
+    version: { type: Number, default: 1 },
+    fields: { type: mongoose.Schema.Types.Mixed, default: {} }
+  },
+
+  // 数据订阅配置
+  subscriptions: [{
+    agentId: { type: String, required: true },
+    collectionName: { type: String, required: true },
+    watermarkField: { type: String, default: 'updatedAt' },
+    batchSize: { type: Number, default: 100 },
+    filters: { type: mongoose.Schema.Types.Mixed, default: {} }
+  }],
+
+  // 技能关联
+  skillIds: [{ type: String }],
+
+  enabled: { type: Boolean, default: true },
+
+  // 运行状态（服务端更新，不由用户直接修改）
   status: {
-    state: { 
-      type: String, 
-      enum: ['idle', 'running', 'failed'],
+    state: {
+      type: String,
+      enum: ['idle', 'running', 'error'],
       default: 'idle'
     },
-    currentTask: { type: String },
     lastRun: { type: Date },
-    errorMsg: { type: String }
+    currentTask: { type: String }
   },
-  
-  // ========== 统计信息 ==========
+
+  // 统计（服务端累加）
   stats: {
-    totalCalls: { type: Number, default: 0 },
-    successCalls: { type: Number, default: 0 },
-    failedCalls: { type: Number, default: 0 },
+    totalRuns: { type: Number, default: 0 },
+    successRuns: { type: Number, default: 0 },
+    failedRuns: { type: Number, default: 0 },
     avgDuration: { type: Number, default: 0 }
   },
-  
-  // ========== 开关 ==========
-  enabled: { type: Boolean, default: true },
-  
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
-// 索引
-agentSchema.index({ key: 1 });
-agentSchema.index({ type: 1 });
+agentSchema.index({ workspaceId: 1 });
 agentSchema.index({ enabled: 1 });
 
-// 更新时自动设置 updatedAt
-agentSchema.pre('save', function(next) {
+agentSchema.pre('save', function (next) {
   this.updatedAt = new Date();
   next();
 });

@@ -4,17 +4,27 @@ const workspaceSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   description: { type: String, default: '' },
-  agentIds: [{ type: String }],  // 智能体ID列表
-  isDefault: { type: Boolean, default: false },  // 是否为默认空间
+  status: {
+    type: String,
+    enum: ['active', 'paused', 'archived'],
+    default: 'active'
+  },
+  agentIds: [{ type: String }],
+
+  stats: {
+    activeAgents: { type: Number, default: 0 },
+    totalOutputs: { type: Number, default: 0 },
+    lastActivityAt: { type: Date }
+  },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
-// 索引
 workspaceSchema.index({ name: 1 });
+workspaceSchema.index({ status: 1 });
 
-// 更新时自动设置 updatedAt
-workspaceSchema.pre('save', function(next) {
+workspaceSchema.pre('save', function (next) {
   this.updatedAt = new Date();
   next();
 });

@@ -1,201 +1,166 @@
 import express from 'express';
 import Workspace from '../models/Workspace.js';
 import Agent from '../models/Agent.js';
-import { v4 as uuidv4 } from 'uuid';
+import { startAgentScheduler, stopAgentScheduler, restartAgent, stopAgent } from '../services/agentScheduler.js';
 
 const router = express.Router();
 
-/**
- * 获取所有空间
- */
+// ────────────────────────────────────────
+// GET /api/workspaces
+// ────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
-    let workspaces = await Workspace.find().sort({ createdAt: -1 });
-    
-    // 如果没有空间，创建默认空间
-    if (workspaces.length === 0) {
-      const defaultWorkspace = await Workspace.create({
-        id: 'space_default',
-        name: '默认空间',
-        description: '系统默认空间',
-        agentIds: [],
-        isDefault: true
-      });
-      workspaces = [defaultWorkspace];
-    }
-    
-    res.json({
-      success: true,
-      workspaces
-    });
+    const { status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+
+    const workspaces = await Workspace.find(filter).sort({ createdAt: -1 });
+    res.json({ success: true, data: workspaces });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-/**
- * 获取单个空间
- */
+// ────────────────────────────────────────
+// GET /api/workspaces/:id
+// ────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
     const workspace = await Workspace.findOne({ id: req.params.id });
-    if (workspace) {
-      res.json({
-        success: true,
-        workspace
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: '空间不存在'
-      });
-    }
+    if (!workspace) return res.status(404).json({ success: false, error: '空间不存在' });
+
+    const agents = await Agent.find({ id: { $in: workspace.agentIds || [] } });
+
+    res.json({ success: true, data: { workspace, agents } });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-/**
- * 创建空间
- */
+// ────────────────────────────────────────
+// POST /api/workspaces
+// ────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
-    const { name, description, agentIds } = req.body;
-    
-    if (!name) {
-      return res.status(400).json({
-        success: false,
-        error: '空间名称不能为空'
-      });
-    }
-    
-    // 生成带前缀的唯一ID
+    const { name, description } = req.body;
+    if (!name) return res.status(400).json({ success: false, error: '空间名称不能为空' });
+
     const spaceId = `space_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const newWorkspace = new Workspace({
+
+    const workspace = new Workspace({
       id: spaceId,
       name,
       description: description || '',
-      agentIds: agentIds || []
+      status: 'active',
+      agentIds: []
     });
-    
-    await newWorkspace.save();
-    
-    res.json({
-      success: true,
-      workspace: newWorkspace
-    });
+
+    await workspace.save();
+    res.json({ success: true, data: workspace });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-/**
- * 更新空间
- */
+// ────────────────────────────────────────
+// PUT /api/workspaces/:id
+// ────────────────────────────────────────
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, agentIds } = req.body;
-    
     const workspace = await Workspace.findOne({ id: req.params.id });
-    if (!workspace) {
-      return res.status(404).json({
-        success: false,
-        error: '空间不存在'
-      });
-    }
-    
+    if (!workspace) return res.status(404).json({ success: false, error: '空间不存在' });
+
+    const { name, description, agentIds } = req.body;
     if (name !== undefined) workspace.name = name;
     if (description !== undefined) workspace.description = description;
     if (agentIds !== undefined) workspace.agentIds = agentIds;
-    
+
     await workspace.save();
-    
-    res.json({
-      success: true,
-      workspace,
-      message: '空间已更新'
-    });
+    res.json({ success: true, data: workspace });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-/**
- * 删除空间
- */
+// ────────────────────────────────────────
+// DELETE /api/workspaces/:id
+// ────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
     const workspace = await Workspace.findOne({ id: req.params.id });
-    
-    if (!workspace) {
-      return res.status(404).json({
-        success: false,
-        error: '空间不存在'
-      });
-    }
-    
-    // 默认空间不能删除
-    if (workspace.isDefault) {
-      return res.status(400).json({
-        success: false,
-        error: '默认空间不能删除'
-      });
-    }
-    
+    if (!workspace) return res.status(404).json({ success: false, error: '空间不存在' });
+
     await Workspace.deleteOne({ id: req.params.id });
-    
-    res.json({
-      success: true,
-      message: '空间删除成功'
-    });
+    res.json({ success: true, message: '空间已删除' });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-/**
- * 获取空间下的智能体
- */
+// ────────────────────────────────────────
+// GET /api/workspaces/:id/agents — 空间下的智能体
+// ────────────────────────────────────────
 router.get('/:id/agents', async (req, res) => {
   try {
     const workspace = await Workspace.findOne({ id: req.params.id });
-    if (!workspace) {
-      return res.status(404).json({
-        success: false,
-        error: '空间不存在'
-      });
+    if (!workspace) return res.status(404).json({ success: false, error: '空间不存在' });
+
+    const agents = await Agent.find({ id: { $in: workspace.agentIds || [] } });
+    res.json({ success: true, data: agents });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ────────────────────────────────────────
+// POST /api/workspaces/:id/start — 启动空间
+// 启动空间下所有智能体的调度循环
+// ────────────────────────────────────────
+router.post('/:id/start', async (req, res) => {
+  try {
+    const workspace = await Workspace.findOne({ id: req.params.id });
+    if (!workspace) return res.status(404).json({ success: false, error: '空间不存在' });
+
+    workspace.status = 'active';
+    await workspace.save();
+
+    const agents = await Agent.find({ id: { $in: workspace.agentIds || [] }, enabled: true });
+    for (const agent of agents) {
+      restartAgent(agent.id);
     }
-    
-    // 根据 agentIds 获取智能体详情
-    const agents = await Agent.find({
-      id: { $in: workspace.agentIds || [] }
-    });
-    
+
     res.json({
       success: true,
-      agents
+      data: { status: 'active', startedAgents: agents.length }
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ────────────────────────────────────────
+// POST /api/workspaces/:id/pause — 暂停空间
+// 停止空间下所有智能体的调度循环
+// ────────────────────────────────────────
+router.post('/:id/pause', async (req, res) => {
+  try {
+    const workspace = await Workspace.findOne({ id: req.params.id });
+    if (!workspace) return res.status(404).json({ success: false, error: '空间不存在' });
+
+    workspace.status = 'paused';
+    await workspace.save();
+
+    const agents = await Agent.find({ id: { $in: workspace.agentIds || [] } });
+    for (const agent of agents) {
+      stopAgent(agent.id);
+    }
+
+    res.json({
+      success: true,
+      data: { status: 'paused', stoppedAgents: agents.length }
     });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

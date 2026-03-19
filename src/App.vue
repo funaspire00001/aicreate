@@ -10,40 +10,34 @@
             <span class="nav-icon">📊</span>
             <span class="nav-text">仪表盘</span>
           </router-link>
-          
-          <div class="nav-group-title">AI 能力</div>
+
+          <div class="nav-group-title">核心</div>
           <router-link to="/workspaces" class="nav-item">
             <span class="nav-icon">🏢</span>
             <span class="nav-text">空间管理</span>
           </router-link>
           <router-link to="/agents" class="nav-item">
-            <span class="nav-icon">👥</span>
+            <span class="nav-icon">🤖</span>
             <span class="nav-text">智能体管理</span>
           </router-link>
           <router-link to="/models" class="nav-item">
-            <span class="nav-icon">🤖</span>
+            <span class="nav-icon">🧠</span>
             <span class="nav-text">模型管理</span>
           </router-link>
           <router-link to="/skills" class="nav-item">
             <span class="nav-icon">✨</span>
             <span class="nav-text">技能配置</span>
           </router-link>
-          
-          <div class="nav-group-title">业务</div>
-          <router-link to="/demands" class="nav-item">
-            <span class="nav-icon">📝</span>
-            <span class="nav-text">需求管理</span>
+
+          <div class="nav-group-title">运维</div>
+          <router-link to="/sync-tasks" class="nav-item">
+            <span class="nav-icon">🔄</span>
+            <span class="nav-text">订阅任务</span>
           </router-link>
-          <router-link to="/feedback" class="nav-item">
-            <span class="nav-icon">💬</span>
-            <span class="nav-text">用户反馈</span>
+          <router-link to="/agent-logs" class="nav-item">
+            <span class="nav-icon">📋</span>
+            <span class="nav-text">运行日志</span>
           </router-link>
-          <router-link to="/local-cards" class="nav-item">
-            <span class="nav-icon">🃏</span>
-            <span class="nav-text">卡片管理</span>
-          </router-link>
-          
-          <div class="nav-group-title">系统</div>
           <router-link to="/data" class="nav-item">
             <span class="nav-icon">🗄️</span>
             <span class="nav-text">数据管理</span>
@@ -84,7 +78,7 @@ body {
 }
 
 .sidebar {
-  width: 240px;
+  width: 220px;
   background: white;
   box-shadow: 2px 0 8px rgba(0,0,0,0.05);
   position: fixed;
@@ -96,22 +90,22 @@ body {
 }
 
 .sidebar-header {
-  padding: 24px;
+  padding: 24px 20px;
   border-bottom: 1px solid #f0f2f5;
 }
 
 .logo {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   color: #667eea;
 }
 
 .nav-links {
-  padding: 16px 0;
+  padding: 12px 0;
 }
 
 .nav-group-title {
-  padding: 16px 24px 8px;
+  padding: 16px 20px 6px;
   font-size: 11px;
   font-weight: 600;
   color: #999;
@@ -122,39 +116,39 @@ body {
 .nav-item {
   display: flex;
   align-items: center;
-  padding: 12px 24px;
-  color: #666;
+  padding: 10px 20px;
+  color: #555;
   text-decoration: none;
-  transition: all 0.2s;
-  border-radius: 0 20px 20px 0;
-  margin: 0 16px;
+  transition: all 0.15s;
+  margin: 2px 10px;
+  border-radius: 8px;
 }
 
 .nav-item:hover {
-  background: #f5f7fa;
+  background: #f0f2f5;
   color: #667eea;
 }
 
-.nav-item.router-link-active {
+.nav-item.router-link-exact-active {
   background: #667eea;
   color: white;
   font-weight: 500;
 }
 
 .nav-icon {
-  font-size: 18px;
-  margin-right: 12px;
-  width: 24px;
+  font-size: 16px;
+  margin-right: 10px;
+  width: 22px;
   text-align: center;
 }
 
 .nav-text {
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 .main-content {
   flex: 1;
-  margin-left: 240px;
+  margin-left: 220px;
   min-height: 100vh;
   padding: 24px;
 }
