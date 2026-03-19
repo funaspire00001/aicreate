@@ -12,6 +12,11 @@ import Request from '../models/Request.js';
 import StepLog from '../models/StepLog.js';
 import AgentRun from '../models/AgentRun.js';
 import Workspace from '../models/Workspace.js';
+import CollectionMeta from '../models/CollectionMeta.js';
+import Model from '../models/Model.js';
+import Skill from '../models/Skill.js';
+import AgentSyncTask from '../models/AgentSyncTask.js';
+import AgentLog from '../models/AgentLog.js';
 
 // 注册 Mongoose 适配器
 AdminJS.registerAdapter({ Database, Resource });
@@ -22,6 +27,15 @@ AdminJS.registerAdapter({ Database, Resource });
 export const createAdminRouter = async () => {
   const admin = new AdminJS({
     resources: [
+      {
+        resource: CollectionMeta,
+        options: {
+          navigation: { name: '核心模块', icon: 'Layer' },
+          listProperties: ['name', 'displayName', 'category', 'order'],
+          filterProperties: ['category'],
+          editProperties: ['name', 'displayName', 'category', 'order', 'description'],
+        },
+      },
       {
         resource: Agent,
         options: {
@@ -88,6 +102,42 @@ export const createAdminRouter = async () => {
           editProperties: ['name', 'description', 'agents', 'isDefault'],
         },
       },
+      {
+        resource: Model,
+        options: {
+          navigation: { name: '核心模块', icon: 'Cpu' },
+          listProperties: ['id', 'name', 'provider', 'enabled', 'isDefault', 'createdAt'],
+          filterProperties: ['provider', 'enabled', 'isDefault'],
+          editProperties: ['name', 'provider', 'config', 'capabilities', 'performance', 'enabled', 'isDefault'],
+        },
+      },
+      {
+        resource: Skill,
+        options: {
+          navigation: { name: '核心模块', icon: 'Tool' },
+          listProperties: ['id', 'name', 'type', 'category', 'enabled', 'createdAt'],
+          filterProperties: ['type', 'category', 'enabled'],
+          editProperties: ['name', 'description', 'type', 'content', 'inputSchema', 'outputSchema', 'tags', 'category', 'agentIds', 'enabled'],
+        },
+      },
+      {
+        resource: AgentSyncTask,
+        options: {
+          navigation: { name: '同步管理', icon: 'RefreshCw' },
+          listProperties: ['consumerAgentId', 'producerAgentId', 'sourceCollection', 'lastStatus', 'lastRunAt'],
+          filterProperties: ['lastStatus', 'consumerAgentId', 'producerAgentId'],
+          editProperties: ['consumerAgentId', 'producerAgentId', 'sourceCollection', 'maxRetries'],
+        },
+      },
+      {
+        resource: AgentLog,
+        options: {
+          navigation: { name: '执行记录', icon: 'FileText' },
+          listProperties: ['traceId', 'type', 'agentId', 'action', 'status', 'createdAt'],
+          filterProperties: ['type', 'status', 'agentId'],
+          editProperties: [],  // 日志只读
+        },
+      },
     ],
     rootPath: '/admin',
     branding: {
@@ -119,6 +169,7 @@ export const createAdminRouter = async () => {
             '执行记录': '执行记录',
             '卡片管理': '卡片管理',
             '知识库': '知识库',
+            '同步管理': '同步管理',
           },
         },
       },

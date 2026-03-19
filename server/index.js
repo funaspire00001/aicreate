@@ -17,10 +17,14 @@ import modelsRoutes from './routes/models.js';
 import demandsRoutes from './routes/demands.js';
 import dataManagerRoutes from './routes/dataManager.js';
 import workspaceRoutes from './routes/workspaces.js';
+import skillsRoutes from './routes/skills.js';
+import syncTasksRoutes from './routes/syncTasks.js';
+import agentLogsRoutes from './routes/agentLogs.js';
 import { createAdminRouter } from './routes/admin.js';
 
 import { startScheduler } from './services/scheduler.js';
 import { startAgentScheduler } from './services/agentScheduler.js';
+import CollectionMeta from './models/CollectionMeta.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,6 +52,9 @@ app.use('/api/models', modelsRoutes);
 app.use('/api/demands', demandsRoutes);
 app.use('/api/data', dataManagerRoutes);
 app.use('/api/workspaces', workspaceRoutes);
+app.use('/api/skills', skillsRoutes);
+app.use('/api/sync-tasks', syncTasksRoutes);
+app.use('/api/agent-logs', agentLogsRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {
@@ -88,6 +95,18 @@ app.get('/api/health', (req, res) => {
 mongoose.connect(MONGO_URI)
   .then(async () => {
     console.log('✅ MongoDB 连接成功');
+    
+    // 初始化集合元数据（只初始化自身）
+    const metaCount = await CollectionMeta.countDocuments();
+    if (metaCount === 0) {
+      console.log('[初始化] 创建集合元数据表...');
+      await CollectionMeta.create({
+        name: 'collectionmetas',
+        displayName: '集合元数据',
+        category: '核心模块',
+        order: 0
+      });
+    }
     
     // 初始化 AdminJS
     try {

@@ -18,19 +18,117 @@
         </div>
         
         <div class="collections-list">
+          <!-- 1. 总表 -->
+          <div class="section-header summary">
+            <span class="section-icon">📊</span>
+            <span>总表</span>
+          </div>
           <div
-            v-for="col in collections"
+            v-for="col in summaryCollections"
             :key="col.name"
-            :class="['collection-item', { active: selectedCollection === col.name }]"
+            :class="['collection-item', 'summary', { active: selectedCollection === col.name }]"
             @click="selectCollection(col.name)"
           >
-            <span class="col-name">{{ col.name }}</span>
+            <span class="col-name">{{ col.displayName }}</span>
             <span class="col-count">{{ col.count }}</span>
           </div>
           
-          <div v-if="collections.length === 0" class="empty-tip">
-            暂无集合
+          <!-- 2. 管理表 -->
+          <div class="section-header management">
+            <span class="section-icon">⚙️</span>
+            <span>管理表</span>
           </div>
+          <div
+            v-for="col in managementCollections"
+            :key="col.name"
+            :class="['collection-item', 'management', { active: selectedCollection === col.name }]"
+            @click="selectCollection(col.name)"
+          >
+            <span class="col-name">{{ col.displayName }}</span>
+            <span class="col-count">{{ col.count }}</span>
+          </div>
+          
+          <!-- 3. 智能体数据表 - 按智能体分组 -->
+          <div class="section-header agent-data">
+            <span class="section-icon">🤖</span>
+            <span>智能体数据表</span>
+          </div>
+          <!-- 按智能体分组显示 -->
+          <template v-for="agent in agentCollections" :key="agent.id">
+            <div 
+              class="agent-group-header"
+              @click="toggleAgent(agent.id)"
+            >
+              <span class="toggle-icon">{{ expandedAgents.includes(agent.id) ? '▼' : '▶' }}</span>
+              <span class="agent-name">{{ agent.name }}</span>
+              <span class="agent-table-count">{{ agent.collections.length }}表</span>
+            </div>
+            <div v-show="expandedAgents.includes(agent.id)" class="agent-collections">
+              <div
+                v-for="col in agent.collections"
+                :key="col.name"
+                :class="['collection-item', 'agent-data', { active: selectedCollection === col.name }]"
+                @click="selectCollection(col.name)"
+              >
+                <span class="col-name">{{ col.displayName }}</span>
+                <span class="col-count">{{ col.count }}</span>
+              </div>
+            </div>
+          </template>
+          <!-- 未分配的智能体数据表 -->
+          <template v-if="unassignedAgentData.length > 0">
+            <div 
+              class="agent-group-header unassigned"
+              @click="toggleAgent('__unassigned__')"
+            >
+              <span class="toggle-icon">{{ expandedAgents.includes('__unassigned__') ? '▼' : '▶' }}</span>
+              <span class="agent-name">未分配</span>
+              <span class="agent-table-count">{{ unassignedAgentData.length }}表</span>
+            </div>
+            <div v-show="expandedAgents.includes('__unassigned__')" class="agent-collections">
+              <div
+                v-for="col in unassignedAgentData"
+                :key="col.name"
+                :class="['collection-item', 'agent-data', { active: selectedCollection === col.name }]"
+                @click="selectCollection(col.name)"
+              >
+                <span class="col-name">{{ col.displayName }}</span>
+                <span class="col-count">{{ col.count }}</span>
+              </div>
+            </div>
+          </template>
+          
+          <!-- 4. 日志表 -->
+          <div class="section-header log">
+            <span class="section-icon">📝</span>
+            <span>日志表</span>
+          </div>
+          <div
+            v-for="col in logCollections"
+            :key="col.name"
+            :class="['collection-item', 'log', { active: selectedCollection === col.name }]"
+            @click="selectCollection(col.name)"
+          >
+            <span class="col-name">{{ col.displayName }}</span>
+            <span class="col-count">{{ col.count }}</span>
+          </div>
+          
+          <!-- 其他/已废弃 -->
+          <template v-if="otherCollections.length > 0">
+            <div class="section-header other">
+              <span class="section-icon">📦</span>
+              <span>其他</span>
+            </div>
+            <div
+              v-for="col in otherCollections"
+              :key="col.name"
+              :class="['collection-item', 'other', { active: selectedCollection === col.name }]"
+              @click="selectCollection(col.name)"
+            >
+              <span class="col-name">{{ col.displayName }}</span>
+              <span class="col-count">{{ col.count }}</span>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -139,6 +237,16 @@ const viewData = ref({})
 const editText = ref('')
 const editingId = ref('')
 
+// 分组数据
+const summaryCollections = ref([])
+const managementCollections = ref([])
+const agentCollections = ref([])
+const unassignedAgentData = ref([])
+const logCollections = ref([])
+const otherCollections = ref([])
+const agents = ref([])
+const expandedAgents = ref([])
+
 // 显示的字段（限制数量）
 const displayFields = computed(() => {
   if (data.value.length === 0) return []
@@ -155,10 +263,26 @@ const fetchCollections = async () => {
     const res = await fetch(`${API_URL}/collections`)
     const result = await res.json()
     if (result.success) {
-      collections.value = result.collections
+      summaryCollections.value = result.summaryCollections || []
+      managementCollections.value = result.managementCollections || []
+      agentCollections.value = result.agentCollections || []
+      unassignedAgentData.value = result.unassignedAgentData || []
+      logCollections.value = result.logCollections || []
+      otherCollections.value = result.otherCollections || []
+      agents.value = result.agents || []
     }
   } catch (err) {
     console.error('获取集合列表失败:', err)
+  }
+}
+
+// 展开/收起智能体分组
+const toggleAgent = (agentId) => {
+  const index = expandedAgents.value.indexOf(agentId)
+  if (index > -1) {
+    expandedAgents.value.splice(index, 1)
+  } else {
+    expandedAgents.value.push(agentId)
   }
 }
 
@@ -340,14 +464,139 @@ onMounted(() => {
   overflow-y: auto;
 }
 
+.category-header {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #909399;
+  background: #f5f7fa;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+  background: #f0f2f5;
+  border-top: 1px solid #e4e7ed;
+  margin-top: 8px;
+}
+
+.section-header:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+.section-header.summary {
+  color: #9b59b6;
+  background: linear-gradient(90deg, #f5f0fa 0%, #f5f7fa 100%);
+}
+
+.section-header.management {
+  color: #409eff;
+  background: linear-gradient(90deg, #ecf5ff 0%, #f5f7fa 100%);
+}
+
+.section-header.agent-data {
+  color: #67c23a;
+  background: linear-gradient(90deg, #f0f9eb 0%, #f5f7fa 100%);
+}
+
+.section-header.log {
+  color: #e6a23c;
+  background: linear-gradient(90deg, #fdf6ec 0%, #f5f7fa 100%);
+}
+
+.section-header.other {
+  color: #909399;
+}
+
+.agent-group-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-left: 3px solid #67c23a;
+  margin: 2px 8px;
+  border-radius: 4px;
+}
+
+.agent-group-header:hover {
+  background: #f0f9eb;
+}
+
+.agent-group-header.unassigned {
+  border-left-color: #e6a23c;
+}
+
+.agent-group-header.unassigned:hover {
+  background: #fdf6ec;
+}
+
+.toggle-icon {
+  font-size: 10px;
+  color: #909399;
+  width: 12px;
+}
+
+.agent-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #606266;
+  margin-left: 6px;
+}
+
+.agent-table-count {
+  font-size: 11px;
+  color: #909399;
+}
+
+.agent-collections {
+  margin-left: 12px;
+}
+
+.section-icon {
+  font-size: 14px;
+}
+
 .collection-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-radius: 6px;
+  padding: 10px 16px;
+  border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
+  margin: 2px 8px;
+}
+
+.collection-item.summary {
+  border-left: 3px solid #9b59b6;
+}
+
+.collection-item.management {
+  border-left: 3px solid #409eff;
+}
+
+.collection-item.agent-data {
+  border-left: 3px solid #67c23a;
+}
+
+.collection-item.log {
+  border-left: 3px solid #e6a23c;
+}
+
+.collection-item.other {
+  border-left: 3px solid #909399;
+  opacity: 0.7;
 }
 
 .collection-item:hover {
@@ -364,11 +613,22 @@ onMounted(() => {
   font-weight: 500;
 }
 
+.col-name-en {
+  font-size: 11px;
+  color: #909399;
+  margin-left: 8px;
+}
+
+.collection-item.active .col-name-en {
+  color: rgba(255,255,255,0.7);
+}
+
 .col-count {
   font-size: 12px;
   padding: 2px 8px;
   background: rgba(0,0,0,0.06);
   border-radius: 10px;
+  margin-left: auto;
 }
 
 .collection-item.active .col-count {
