@@ -85,6 +85,11 @@ const routes = [
     path: '/skills',
     name: 'SkillConfig',
     component: () => import('../views/SkillConfig.vue')
+  },
+  {
+    path: '/sync-tasks',
+    name: 'SyncTaskManagement',
+    component: () => import('../views/SyncTaskManagement.vue')
   }
 ]
 
